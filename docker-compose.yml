@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  jetson-nav:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: jetson-nav
+    container_name: jetson-smart-nav
+    runtime: nvidia
+    network_mode: host
+    environment:
+      - DISPLAY=${DISPLAY}
+    devices:
+      - /dev/video0:/dev/video0
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    restart: unless-stopped
