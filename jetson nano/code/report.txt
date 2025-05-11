@@ -1,0 +1,22 @@
+Giải thích các và logic
+Chạy mô hình thay phiên nhau:
+Khung chẵn (frame_count % 2 == 0): Chạy ENet để kiểm tra làn an toàn.
+Khung lẻ (frame_count % 2 != 0): Chạy YOLOv5m để phát hiện vật cản.
+Điều này giúp giảm tải CPU/GPU trên Jetson Nano, tránh crash do chạy đồng thời hai mô hình.
+Xử lý đầu ra ENet:
+Sử dụng mapping.json để xác định các lớp an toàn (safe_lane_ids = {7, 8, 10, 14}).
+Kiểm tra pixel trung tâm của ảnh (giả định người dùng ở giữa) để xác định xem họ có trong làn an toàn không.
+Nếu không (is_in_safe_lane = False), phát thông báo ưu tiên thấp (priority=2).
+Xử lý đầu ra YOLOv5m:
+Sử dụng data.yaml để ánh xạ class_id thành tên lớp (yolo_classes).
+Ước lượng khoảng cách đơn giản dựa trên chiều rộng bounding box (box_width > 200 là gần).
+Xác định hướng (trái, phải, giữa) dựa trên vị trí trung tâm của bounding box.
+Nếu vật cản gần (<2m), phát thông báo ưu tiên cao (priority=1, lặp lại 2 lần).
+Quản lý thông báo:
+Sử dụng notification_queue và notification_lock để quản lý thông báo.
+Ưu tiên cao (priority=1) sẽ xóa các thông báo ưu tiên thấp (priority=2) nếu đang phát.
+Thông báo nguy hiểm (vật cản gần) được lặp lại 2 lần, thông báo lệch làn chỉ phát 1 lần.
+Chỉ phát thông báo mới sau 10 khung hình để tránh spam.
+Tối ưu hóa:
+Chạy thay phiên giúp giảm tải tài nguyên.
+Sử dụng cuda.Context.synchronize() để đảm bảo đồng bộ hóa GPU.
