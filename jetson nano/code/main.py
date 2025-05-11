@@ -5,7 +5,6 @@ sudo apt install python3-pip libopencv-dev python3-opencv
 pip3 install torch torchvision tensorrt pycuda pyttsx3
 sudo apt install espeak
 """
-
 ## Load và chạy mô hình TensorRT
 import tensorrt as trt
 import pycuda.driver as cuda
@@ -16,6 +15,7 @@ import queue
 import threading
 import pyttsx3
 import time
+import pytesseract
 
 # Định nghĩa tên lớp từ data.yaml (YOLOv5m)
 yolo_classes = [
@@ -26,6 +26,10 @@ yolo_classes = [
 
 # Định nghĩa lớp an toàn từ mapping.json (ENet)
 safe_lane_ids = {7, 8, 10, 14}  # crosswalk - plain, curb cut, pedestrian-area, sidewalk
+
+# Nhận input tên địa điểm từ người dùng
+destination = input("Nhập tên địa điểm bạn muốn đến: ").strip().lower()
+print(f"Địa điểm đích: {destination}")
 
 def load_trt_engine(engine_path):
     with open(engine_path, 'rb') as f:
@@ -67,38 +71,53 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 notification_queue = queue.Queue()
 notification_lock = threading.Lock()
 engine = pyttsx3.init()
+current_priority = 0  # Ưu tiên của thông báo đang phát
+last_notification_time = 0  # Thời gian phát thông báo cuối cùng
+min_notification_interval = 1.0  # Khoảng thời gian tối thiểu giữa các thông báo (giây)
 
 def speak_notification():
+    global current_priority, last_notification_time
     while True:
-        if not notification_queue.empty() and notification_lock.acquire(blocking=False):
-            message, repeat = notification_queue.get()
-            engine.say(message)
-            engine.runAndWait()
-            if repeat:
-                time.sleep(0.5)  # Đợi giữa hai lần lặp
+        if not notification_queue.empty():
+            with notification_lock:
+                message, priority, repeat = notification_queue.get()
+                # Ngắt thông báo hiện tại nếu có thông báo ưu tiên cao hơn
+                if priority > current_priority:
+                    engine.stop()
+                current_priority = priority
                 engine.say(message)
                 engine.runAndWait()
-            notification_lock.release()
-        time.sleep(0.1)
+                if repeat:
+                    time.sleep(0.5)  # Đợi giữa hai lần lặp
+                    engine.say(message)
+                    engine.runAndWait()
+                last_notification_time = time.time()
+                current_priority = 0  # Đặt lại ưu tiên sau khi phát xong
+        time.sleep(0.05)
 
 # Khởi động luồng phát thông báo
 threading.Thread(target=speak_notification, daemon=True).start()
 
-# Thêm thông báo vào hàng đợi
+# Thêm thông báo vào hàng đợi với logic thời gian thực
 def add_notification(message, priority=1, repeat=False):
-    if priority == 1 and notification_lock.locked():
-        with notification_queue.mutex:
-            notification_queue.queue.clear()  # Xóa thông báo không ưu tiên
-    notification_queue.put((message, repeat))
+    global last_notification_time
+    current_time = time.time()
+    # Chỉ thêm thông báo nếu đã qua khoảng thời gian tối thiểu hoặc thông báo có ưu tiên cao hơn
+    if current_time - last_notification_time >= min_notification_interval or priority > current_priority:
+        with notification_lock:
+            # Xóa hàng đợi cũ để giữ tính thời gian thực
+            while not notification_queue.empty():
+                notification_queue.get()
+            notification_queue.put((message, priority, repeat))
 
 ## Logic xử lý và phát thông báo
 last_notification_frame = 0
 frame_count = 0
 is_in_safe_lane = True  # Trạng thái làn an toàn mặc định
+destination_reached = False  # Biến kiểm tra xem đã đến đích chưa
 
 # Ước lượng khoảng cách từ chiều rộng bounding box (giả định đơn giản)
 def estimate_distance(box_width):
-    # Giả định: chiều rộng bounding box lớn hơn 200 pixel là "gần" (<2m)
     return "close" if box_width > 200 else "far"
 
 # Xác định hướng vật cản (trái, phải, giữa)
@@ -109,6 +128,17 @@ def determine_direction(box_center_x, frame_width=640):
         return "phải"
     else:
         return "giữa"
+
+# Đọc văn bản trên biển hiệu bằng OCR
+def read_sign_text(image):
+    try:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        text = pytesseract.image_to_string(thresh, config='--psm 6').strip().lower()
+        return text
+    except Exception as e:
+        print(f"Error reading sign text: {e}")
+        return ""
 
 while True:
     ret, frame = cap.read()
@@ -121,54 +151,61 @@ while True:
 
     # Chạy ENet và YOLOv5m thay phiên nhau
     if frame_count % 2 == 0:  # Khung chẵn: Chạy ENet
-        # Suy luận ENet
         enet_output = infer(enet_engine, input_frame)
-        lane_mask = np.argmax(enet_output, axis=1)[0]  # Lấy lớp có xác suất cao nhất
-
-        # Kiểm tra xem người dùng có trong làn an toàn không
-        # Lấy vùng trung tâm của ảnh (giả định người dùng ở giữa)
-        center_pixel = lane_mask[320, 320]  # Trung tâm ảnh 640x640
+        lane_mask = np.argmax(enet_output, axis=1)[0]
+        center_pixel = lane_mask[320, 320]
         is_in_safe_lane = center_pixel in safe_lane_ids
 
-        # Nếu lệch làn an toàn, phát thông báo
         if not is_in_safe_lane and frame_count - last_notification_frame > 10:
             message = "Bạn đang ra khỏi làn an toàn, di chuyển sang trái để quay lại"
             add_notification(message, priority=2)
             last_notification_frame = frame_count
 
     else:  # Khung lẻ: Chạy YOLOv5m
-        # Suy luận YOLOv5m
         yolo_output = infer(yolo_engine, input_frame)
-
-        # Xử lý đầu ra YOLOv5m (giả định đầu ra có định dạng [batch, num_boxes, (x, y, w, h, conf, cls_probs)])
-        # YOLOv5m thường trả về [1, num_boxes, 5 + num_classes], với num_classes = 15
         num_boxes = yolo_output.shape[1]
         for i in range(num_boxes):
-            conf = yolo_output[0, i, 4]  # Confidence score
-            if conf < 0.5:  # Ngưỡng confidence
+            conf = yolo_output[0, i, 4]
+            if conf < 0.5:
                 continue
 
-            # Lấy lớp có xác suất cao nhất
-            cls_probs = yolo_output[0, i, 5:20]  # 15 lớp (0-14)
+            cls_probs = yolo_output[0, i, 5:20]
             class_id = np.argmax(cls_probs)
             class_name = yolo_classes[class_id]
 
-            # Lấy tọa độ bounding box
             x, y, w, h = yolo_output[0, i, 0:4]
             box_center_x = x
             box_width = w
+            box_center_y = y
+            box_height = h
 
-            # Ước lượng khoảng cách và hướng
+            x1 = int(x - w / 2)
+            y1 = int(y - h / 2)
+            x2 = int(x + w / 2)
+            y2 = int(y + h / 2)
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(640, x2), min(640, y2)
+
+            if class_id == 8 and not destination_reached:  # Traffic Sign (Front)
+                sign_image = frame[y1:y2, x1:x2]
+                if sign_image.size > 0:
+                    sign_text = read_sign_text(sign_image)
+                    print(f"Sign text detected: {sign_text}")
+                    if sign_text and destination in sign_text:
+                        message = f"Bạn đã đến {destination}!"
+                        add_notification(message, priority=1, repeat=True)
+                        destination_reached = True
+                        last_notification_frame = frame_count
+                        break
+
             distance = estimate_distance(box_width)
             direction = determine_direction(box_center_x)
 
-            # Nếu vật cản gần (<2m), phát thông báo ưu tiên
             if distance == "close" and frame_count - last_notification_frame > 10:
                 message = f"Vật cản {class_name} ở bên {direction}, di chuyển sang {'trái' if direction == 'phải' else 'phải'}"
                 add_notification(message, priority=1, repeat=True)
                 last_notification_frame = frame_count
 
-    # Đảm bảo đồng bộ hóa
     cuda.Context.synchronize()
 
 # Giải phóng tài nguyên
