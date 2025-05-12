@@ -1,6 +1,3 @@
-"""
-pip install fastapi uvicorn python-multipart opencv-python ultralytics
-"""
 from flask import Flask, request, jsonify
 from ultralytics import YOLO
 import cv2
@@ -86,8 +83,7 @@ def detect_objects():
 
         # Tính khoảng cách Euclid từ camera đến vật thể
         distance = math.hypot(obj_center[0] - camera_position[0], obj_center[1] - camera_position[1])
-        print(f"{label_vi}: {distance:.2f} px")
-
+        
         if distance < min_distance:
             min_distance = distance
             closest_object = {
