@@ -29,5 +29,4 @@ def build_engine(onnx_file, output_file):
         f.write(engine.serialize())
     print(f"TensorRT engine saved to {output_file}")
 
-build_engine("enet_simplified.onnx", "enet.trt")
-build_engine("my_yolov5m_simplified.onnx", "yolov5m.trt")
+build_engine("enet.onnx", "enet.trt")

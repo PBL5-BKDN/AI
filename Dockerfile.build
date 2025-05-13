@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/l4t-tensorrt:r8.2.1-cuda10.2-trt8.2.1.8
+FROM python:3.9-slim
 
 # Thiết lập biến môi trường
 ENV DEBIAN_FRONTEND=noninteractive
@@ -6,16 +6,11 @@ ENV TZ=Asia/Ho_Chi_Minh
 
 # Cài đặt hệ thống cần thiết
 RUN apt update && apt install -y \
-    python3-pip \
     python3-dev \
     libsm6 libxext6 libxrender-dev \
-    espeak ffmpeg libespeak1 \
-    tesseract-ocr tesseract-ocr-vie \
+    espeak ffmpeg \
+    tesseract-ocr \
     libglib2.0-0 \
-    libgtk2.0-dev \
-    libcanberra-gtk* \
-    libnss3-dev \
-    libasound2 \
     git \
     && apt clean \
     && rm -rf /var/lib/apt/lists/*
@@ -42,14 +37,12 @@ RUN cp /tmp/src/*.py /app/ && \
 # Mở cổng cho API
 EXPOSE 5000
 
-# Thiết lập quyền thực thi
-RUN chmod +x /app/main.py
+# Tạo file giả cho TensorRT (sẽ được thay thế trên Jetson Nano)
+RUN touch /app/dummy_tensorrt.py && \
+    echo "# Dummy file for TensorRT - will be replaced on Jetson Nano" > /app/dummy_tensorrt.py
 
 # Tạo volume để lưu trữ dữ liệu
 VOLUME ["/app/data"]
 
 # Thiết lập entrypoint
-ENTRYPOINT ["python3", "main.py"]
-
-# Hoặc sử dụng CMD nếu muốn linh hoạt hơn
-# CMD ["python3", "main.py"]
+CMD ["python3", "main.py"] 
