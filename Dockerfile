@@ -39,6 +39,19 @@ RUN cp /tmp/src/*.py /app/ && \
     cp /tmp/src/yolov8n_api/app.py /app/ && \
     cp /tmp/src/yolov8n_api/client.py /app/
 
+# Copy các mô hình ONNX nếu có
+RUN mkdir -p /app/onnx_models
+COPY *.onnx /app/onnx_models/ 2>/dev/null || echo "No ONNX models found"
+
+# Chuyển đổi mô hình ONNX sang TensorRT
+RUN if [ -f /app/onnx_models/enet_simplified.onnx ]; then \
+    echo "Converting enet_simplified.onnx to TensorRT..." && \
+    python3 /app/onnx_to_tensorRT.py && \
+    echo "Conversion completed successfully"; \
+    else \
+    echo "enet_simplified.onnx not found, skipping conversion"; \
+    fi
+
 # Mở cổng cho API
 EXPOSE 5000
 

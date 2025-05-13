@@ -20,12 +20,17 @@ Dự án được đóng gói trong Docker để dễ dàng triển khai. Do ph�
 git clone https://github.com/yourusername/jetson-navigation.git
 cd jetson-navigation
 
+# Chuẩn bị các mô hình ONNX (nếu chưa có)
+# Đặt các file enet_simplified.onnx và my_yolov5m_simplified.onnx vào thư mục gốc
+
 # Cấp quyền thực thi cho script build
 chmod +x build_on_jetson.sh
 
 # Build và push image lên Docker Hub
 ./build_on_jetson.sh
 ```
+
+Trong quá trình build Docker, các mô hình ONNX sẽ được tự động chuyển đổi sang định dạng TensorRT để tối ưu hiệu năng trên Jetson Nano.
 
 ### 2. Chạy container trên Jetson Nano
 
@@ -62,6 +67,14 @@ docker run --runtime nvidia --network host \
 - Docker Engine
 - NVIDIA Container Runtime
 - Camera USB hoặc CSI
+
+## Chuẩn bị mô hình
+
+Dự án sử dụng hai mô hình chính:
+1. **ENet** cho phân đoạn làn đường (file: `enet_simplified.onnx`)
+2. **YOLOv5m** cho phát hiện đối tượng (file: `my_yolov5m_simplified.onnx`)
+
+Các mô hình ONNX sẽ được tự động chuyển đổi sang định dạng TensorRT trong quá trình build Docker.
 
 ## Cấu hình nâng cao
 
