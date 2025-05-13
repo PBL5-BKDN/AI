@@ -1,55 +1,81 @@
-1. Triển khai mô hình Image Captioning sinh mô tả tiếng Việt cho hình ảnh, hỗ trợ người khiếm thị di chuyển thuận tiện hơn bằng Google Colab.
+# Jetson Navigation - Hỗ trợ người khiếm thị
 
-1.2. Các thành phần chính
+Dự án sử dụng AI để hỗ trợ người khiếm thị di chuyển an toàn, tạo mô tả tiếng Việt cho hình ảnh và cảnh báo chướng ngại vật.
 
-Dữ liệu: Sử dụng hình ảnh từ các bộ dữ liệu có sẵn như MS COCO, Flickr30k.
+## Các thành phần chính
 
-Mô hình:
+- **Mô hình Image Captioning**: Tạo mô tả tiếng Việt cho hình ảnh (ResNet-50 + LSTM)
+- **Phát hiện đối tượng**: YOLOv5m/YOLOv8n để nhận diện người, xe cộ, chướng ngại vật
+- **Phân đoạn làn đường**: ENet để phân biệt khu vực an toàn cho người đi bộ
+- **Cảnh báo bằng giọng nói**: Thông báo về chướng ngại vật và hướng dẫn di chuyển
 
-Encoder: Mô hình CNN (ResNet-50) trích xuất đặc trưng hình ảnh.
+## Triển khai với Docker
 
-Decoder: Mô hình LSTM dựa trên đặc trưng để sinh caption.
+### 1. Build và triển khai trên Jetson Nano
 
-Huấn luyện: Chạy trên Google Colab Free.
+Dự án được đóng gói trong Docker để dễ dàng triển khai. Do phụ thuộc vào CUDA và TensorRT, việc build phải thực hiện trên Jetson Nano:
 
-Dự đoán: Sinh caption tiếng Việt cho hình ảnh.
+```bash
+# Clone repository
+git clone https://github.com/yourusername/jetson-navigation.git
+cd jetson-navigation
 
-2. Chuẩn bị dữ liệu
+# Chuẩn bị các mô hình ONNX (nếu chưa có)
+# Đặt các file enet_simplified.onnx và my_yolov5m_simplified.onnx vào thư mục gốc
 
-2.1. Các thành phần cần thiết
+# Cấp quyền thực thi cho script build
+chmod +x build_on_jetson.sh
 
-Hình ảnh từ bộ dữ liệu có sẵn.
+# Build và push image lên Docker Hub
+./build_on_jetson.sh
+```
 
-Caption tiếng Việt: Dịch caption từ tiếng Anh (nếu cần).
+Trong quá trình build Docker, các mô hình ONNX sẽ được tự động chuyển đổi sang định dạng TensorRT để tối ưu hiệu năng trên Jetson Nano.
 
-Từ điển (Vocabulary): Danh sách từ vựng trong caption.
+### 2. Chạy container trên Jetson Nano
 
-2.2. Tạo dữ liệu caption tiếng Việt
+#### Sử dụng Docker Compose:
 
-Sử dụng Google Translate API hoặc tự dịch bằng tay.
+```bash
+export DOCKER_USERNAME=dinhduc2004  # Hoặc username của bạn
+docker-compose up -d
+```
 
-Xây dựng từ điển cho caption.
+#### Hoặc sử dụng Docker trực tiếp:
 
-2.3. Chia tập dữ liệu
+```bash
+docker run --runtime nvidia --network host \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -e DISPLAY=$DISPLAY \
+  --device /dev/video0:/dev/video0 \
+  -v $PWD/data:/app/data \
+  dinhduc2004/jetson-nav:latest
+```
 
-Train: 80%.
+## Cấu trúc dự án
 
-Validation: 10%.
+- `main.py`: Mã nguồn chính của ứng dụng
+- `test.py`: Script kiểm thử YOLOv5m
+- `onnx_to_tensorRT.py`: Chuyển đổi mô hình ONNX sang TensorRT
+- `yolov8n_api/`: API phát hiện đối tượng với YOLOv8n
+- `Dockerfile`: Cấu hình Docker cho Jetson Nano
+- `docker-compose.yml`: Cấu hình Docker Compose
 
-Test: 10%.
+## Yêu cầu hệ thống
 
-3. Xây dựng mô hình
+- Jetson Nano với JetPack 4.6+
+- Docker Engine
+- NVIDIA Container Runtime
+- Camera USB hoặc CSI
 
-3.1. Encoder - Trích xuất đặc trưng
+## Chuẩn bị mô hình
 
-Sử dụng ResNet-50 (loại bỏ Fully Connected Layer).
+Dự án sử dụng hai mô hình chính:
+1. **ENet** cho phân đoạn làn đường (file: `enet_simplified.onnx`)
+2. **YOLOv5m** cho phát hiện đối tượng (file: `my_yolov5m_simplified.onnx`)
 
-3.2. Decoder - Sinh caption
+Các mô hình ONNX sẽ được tự động chuyển đổi sang định dạng TensorRT trong quá trình build Docker.
 
-Sử dụng LSTM.
+## Cấu hình nâng cao
 
-Nhận đầu vào là đặc trưng từ Encoder + caption trước đó.
-
-3.3. Tích hợp Encoder và Decoder
-
-Kết hợp ResNet-50 làm Encoder và LSTM làm Decoder.
+Xem thêm chi tiết trong file `DOCKER_README.md`.

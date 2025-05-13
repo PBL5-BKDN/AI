@@ -2,10 +2,7 @@ version: "3.8"
 
 services:
   jetson-nav:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: jetson-nav
+    image: ${DOCKER_USERNAME:-dinhduc2004}/jetson-nav:${TAG:-latest}
     container_name: jetson-smart-nav
     runtime: nvidia
     network_mode: host
@@ -15,4 +12,9 @@ services:
       - /dev/video0:/dev/video0
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./data:/app/data
     restart: unless-stopped
+    # Bỏ comment dòng dưới nếu muốn build từ Dockerfile thay vì pull từ Docker Hub
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
