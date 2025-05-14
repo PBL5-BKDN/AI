@@ -1,0 +1,19 @@
+version: '3'
+
+services:
+  vision-assist:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vision-assist
+    restart: unless-stopped
+    privileged: true  # Cần quyền privileged để truy cập camera và GPU
+    volumes:
+      - ./model:/app/model  # Chia sẻ thư mục model
+      - ./logs:/app/logs    # Chia sẻ thư mục logs
+    devices:
+      - /dev/video0:/dev/video0  # Camera USB
+    environment:
+      - DISPLAY=${DISPLAY}  # Cho phép hiển thị giao diện đồ họa (nếu cần)
+    runtime: nvidia  # Sử dụng NVIDIA runtime
+    command: python3 code/main.py
