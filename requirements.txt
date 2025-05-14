@@ -15,3 +15,6 @@ VL53L1X>=0.0.2
 # For testing and development
 pytest>=7.0.0
 pyaudio
+libportaudio2
+libportaudiocpp0
+portaudio19-dev
