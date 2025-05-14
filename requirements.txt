@@ -1,0 +1,17 @@
+# Basic libraries
+pyserial>=3.5
+pynmea2>=1.18.0
+requests>=2.28.0
+
+# Speech recognition
+SpeechRecognition>=3.9.0
+gTTS>=2.3.0
+pygame>=2.1.0
+
+# Sensors - phần cứng
+VL53L1X>=0.0.2
+# Cần cài thêm với: sudo apt-get install python3-smbus
+
+# For testing and development
+pytest>=7.0.0
+pyaudio

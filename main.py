@@ -1,212 +1,165 @@
-"""
-pip install pycuda opencv-python pyttsx3
-sudo apt update
-sudo apt install python3-pip libopencv-dev python3-opencv
-pip3 install torch torchvision tensorrt pycuda pyttsx3
-sudo apt install espeak
-"""
-## Load và chạy mô hình TensorRT
-import tensorrt as trt
-import pycuda.driver as cuda
-import pycuda.autoinit
-import cv2
-import numpy as np
-import queue
 import threading
-import pyttsx3
+from navigation.speech.voice import VoiceService
+from navigation.navigation.navigator import Navigator
+from navigation.services.gps import GPSService  
+from navigation.services.api import APIService
+from navigation.config.settings import MAX_REROUTE_ATTEMPTS
 import time
-import pytesseract
+import signal
+import sys
+# import VL53L1X
 
-# Định nghĩa tên lớp từ data.yaml (YOLOv5m)
-yolo_classes = [
-    "Ground Animal", "Person", "Bench", "Billboard", "Fire Hydrant",
-    "Mailbox", "Manhole", "Pothole", "Traffic Sign (Front)", "Trash Can",
-    "Bus", "Car", "Motorcycle", "Other Vehicle", "Truck"
-]
+# Biến toàn cục để kiểm soát trạng thái chạy của các luồng
+running = True
 
-# Định nghĩa lớp an toàn từ mapping.json (ENet)
-safe_lane_ids = {7, 8, 10, 14}  # crosswalk - plain, curb cut, pedestrian-area, sidewalk
+# Xử lý tín hiệu kết thúc (Ctrl+C)
+def signal_handler(sig, frame):
+    global running
+    print("\nĐã nhận tín hiệu kết thúc. Đang dừng các luồng...")
+    running = False
+    sys.exit(0)
 
-# Nhận input tên địa điểm từ người dùng
-destination = input("Nhập tên địa điểm bạn muốn đến: ").strip().lower()
-print(f"Địa điểm đích: {destination}")
+# Đăng ký handler cho tín hiệu SIGINT (Ctrl+C)
+signal.signal(signal.SIGINT, signal_handler)
 
-def load_trt_engine(engine_path):
-    with open(engine_path, 'rb') as f:
-        engine_data = f.read()
-    runtime = trt.Runtime(trt.Logger(trt.Logger.WARNING))
-    return runtime.deserialize_cuda_engine(engine_data)
+def init_cam_bien_layser(voice_service):
+    # Khởi tạo cảm biến
+    # tof = VL53L1X.VL53L1X(i2c_bus=1, i2c_address=0x29)
+    # tof.open()
 
-# Load mô hình TensorRT
-enet_engine = load_trt_engine("enet.trt")
-yolo_engine = load_trt_engine("yolov5m.trt")
-
-# Hàm suy luận TensorRT
-def infer(engine, input_data):
-    context = engine.create_execution_context()
-    inputs, outputs, bindings, stream = [], [], [], cuda.Stream()
-    for binding in engine:
-        size = trt.volume(engine.get_binding_shape(binding)) * engine.max_batch_size
-        dtype = trt.nptype(engine.get_binding_dtype(binding))
-        host_mem = cuda.pagelocked_empty(size, dtype)
-        device_mem = cuda.mem_alloc(host_mem.nbytes)
-        bindings.append(int(device_mem))
-        if engine.binding_is_input(binding):
-            inputs.append((host_mem, device_mem))
-        else:
-            outputs.append((host_mem, device_mem))
-    np.copyto(inputs[0][0], input_data.ravel())
-    cuda.memcpy_htod_async(inputs[0][1], inputs[0][0], stream)
-    context.execute_async(bindings=bindings, stream_handle=stream.handle)
-    cuda.memcpy_dtoh_async(outputs[0][0], outputs[0][1], stream)
-    stream.synchronize()
-    return outputs[0][0].reshape(engine.get_binding_shape(engine[1]))
-
-## Xử lý đầu vào từ camera
-cap = cv2.VideoCapture(0)  # Camera mặc định
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-
-## Quản lý và phát thông báo qua loa
-notification_queue = queue.Queue()
-notification_lock = threading.Lock()
-engine = pyttsx3.init()
-current_priority = 0  # Ưu tiên của thông báo đang phát
-last_notification_time = 0  # Thời gian phát thông báo cuối cùng
-min_notification_interval = 1.0  # Khoảng thời gian tối thiểu giữa các thông báo (giây)
-
-def speak_notification():
-    global current_priority, last_notification_time
-    while True:
-        if not notification_queue.empty():
-            with notification_lock:
-                message, priority, repeat = notification_queue.get()
-                # Ngắt thông báo hiện tại nếu có thông báo ưu tiên cao hơn
-                if priority > current_priority:
-                    engine.stop()
-                current_priority = priority
-                engine.say(message)
-                engine.runAndWait()
-                if repeat:
-                    time.sleep(0.5)  # Đợi giữa hai lần lặp
-                    engine.say(message)
-                    engine.runAndWait()
-                last_notification_time = time.time()
-                current_priority = 0  # Đặt lại ưu tiên sau khi phát xong
-        time.sleep(0.05)
-
-# Khởi động luồng phát thông báo
-threading.Thread(target=speak_notification, daemon=True).start()
-
-# Thêm thông báo vào hàng đợi với logic thời gian thực
-def add_notification(message, priority=1, repeat=False):
-    global last_notification_time
-    current_time = time.time()
-    # Chỉ thêm thông báo nếu đã qua khoảng thời gian tối thiểu hoặc thông báo có ưu tiên cao hơn
-    if current_time - last_notification_time >= min_notification_interval or priority > current_priority:
-        with notification_lock:
-            # Xóa hàng đợi cũ để giữ tính thời gian thực
-            while not notification_queue.empty():
-                notification_queue.get()
-            notification_queue.put((message, priority, repeat))
-
-## Logic xử lý và phát thông báo
-last_notification_frame = 0
-frame_count = 0
-is_in_safe_lane = True  # Trạng thái làn an toàn mặc định
-destination_reached = False  # Biến kiểm tra xem đã đến đích chưa
-
-# Ước lượng khoảng cách từ chiều rộng bounding box (giả định đơn giản)
-def estimate_distance(box_width):
-    return "close" if box_width > 200 else "far"
-
-# Xác định hướng vật cản (trái, phải, giữa)
-def determine_direction(box_center_x, frame_width=640):
-    if box_center_x < frame_width // 3:
-        return "trái"
-    elif box_center_x > 2 * frame_width // 3:
-        return "phải"
-    else:
-        return "giữa"
-
-# Đọc văn bản trên biển hiệu bằng OCR
-def read_sign_text(image):
+    # # Thiết lập chế độ đo xa (Long Range)
+    # tof.start_ranging(3)  # 1 = Short, 2 = Medium, 3 = Long
+    print("Khởi tạo cảm biến")
+    
     try:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-        text = pytesseract.image_to_string(thresh, config='--psm 6').strip().lower()
-        return text
+        while running:
+            print("Đang đo khoảng cách...")
+            # distance = tof.get_distance()
+            # print(f"Khoảng cách: {distance} mm")
+            # if distance <= 2000:
+            #     print("⚠️ Cảnh báo: Vật cản trong phạm vi 2 mét!")
+                # Phát âm thanh cảnh báo
+                # voice_service.speak("Cảnh báo: Vật cản trong phạm vi 2 mét!")
+            time.sleep(5)
     except Exception as e:
-        print(f"Error reading sign text: {e}")
-        return ""
+        print(f"Lỗi trong luồng cảm biến: {e}")
+    finally:
+        # tof.stop_ranging()
+        print("Đã dừng luồng cảm biến")
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-    frame_count += 1
+def init_phan_doan_lan_duong():
+    print("Khởi tạo phân đoán làng đường")
+    try:
+        while running:
+            print("Đang phán đoán làng đường...")
+            time.sleep(5)
+    except Exception as e:
+        print(f"Lỗi trong luồng phân đoán làng đường: {e}")
+    finally:
+        print("Đã dừng luồng phân đoán làng đường")
 
-    # Chuẩn bị input cho mô hình (kích thước 640x640)
-    input_frame = cv2.resize(frame, (640, 640)).transpose(2, 0, 1)[None].astype(np.float32)
-
-    # Chạy ENet và YOLOv5m thay phiên nhau
-    if frame_count % 2 == 0:  # Khung chẵn: Chạy ENet
-        enet_output = infer(enet_engine, input_frame)
-        lane_mask = np.argmax(enet_output, axis=1)[0]
-        center_pixel = lane_mask[320, 320]
-        is_in_safe_lane = center_pixel in safe_lane_ids
-
-        if not is_in_safe_lane and frame_count - last_notification_frame > 10:
-            message = "Bạn đang ra khỏi làn an toàn, di chuyển sang trái để quay lại"
-            add_notification(message, priority=2)
-            last_notification_frame = frame_count
-
-    else:  # Khung lẻ: Chạy YOLOv5m
-        yolo_output = infer(yolo_engine, input_frame)
-        num_boxes = yolo_output.shape[1]
-        for i in range(num_boxes):
-            conf = yolo_output[0, i, 4]
-            if conf < 0.5:
+def xu_ly_yeu_cau(voice_service, gps_service, api_service): 
+    print("Khởi tạo hệ thống dẫn đường")
+    
+    # Initialize navigator
+    navigator = Navigator(gps_service, voice_service, api_service)
+    
+    try:
+        while running:
+            # Get destination from user
+            destination = navigator.get_destination_from_user()
+            
+            # Get initial GPS position
+            initial_lat, initial_lng = gps_service.wait_for_valid_location()
+            
+            # Check if GPS data is available
+            if initial_lat is None or initial_lng is None:
+                print("Không thể lấy vị trí GPS sau thời gian chờ")
+                voice_service.speak("Không thể xác định vị trí của bạn. Vui lòng nói lại điểm đến.")
                 continue
-
-            cls_probs = yolo_output[0, i, 5:20]
-            class_id = np.argmax(cls_probs)
-            class_name = yolo_classes[class_id]
-
-            x, y, w, h = yolo_output[0, i, 0:4]
-            box_center_x = x
-            box_width = w
-            box_center_y = y
-            box_height = h
-
-            x1 = int(x - w / 2)
-            y1 = int(y - h / 2)
-            x2 = int(x + w / 2)
-            y2 = int(y + h / 2)
-            x1, y1 = max(0, x1), max(0, y1)
-            x2, y2 = min(640, x2), min(640, y2)
-
-            if class_id == 8 and not destination_reached:  # Traffic Sign (Front)
-                sign_image = frame[y1:y2, x1:x2]
-                if sign_image.size > 0:
-                    sign_text = read_sign_text(sign_image)
-                    print(f"Sign text detected: {sign_text}")
-                    if sign_text and destination in sign_text:
-                        message = f"Bạn đã đến {destination}!"
-                        add_notification(message, priority=1, repeat=True)
-                        destination_reached = True
-                        last_notification_frame = frame_count
+            
+            # Navigation loop
+            reroute_attempts = 0
+            
+            while reroute_attempts < MAX_REROUTE_ATTEMPTS and running:
+                print(f"Đang yêu cầu lộ trình từ API (Lần {reroute_attempts + 1})...")
+                response_data = navigator.request_route(initial_lat, initial_lng, destination)
+                
+                if response_data and 'steps' in response_data and response_data['steps']:
+                    steps = response_data['steps']
+                    
+                    # Reset reroute counter when we get a valid route
+                    reroute_attempts = 0
+                    
+                    # Follow the route
+                    success, new_lat, new_lng = navigator.follow_route(steps, initial_lat, initial_lng)
+                    
+                    # If navigation completed successfully
+                    if success:
                         break
+                        
+                    # If we need to reroute
+                    if new_lat and new_lng:
+                        initial_lat, initial_lng = new_lat, new_lng
+                        reroute_attempts += 1
+                        continue
+                
+                else:
+                    print("Không nhận được lộ trình hoặc lộ trình rỗng từ API.")
+                    reroute_attempts += 1
+                    
+                    if response_data:
+                        error_message = response_data.get('error', 'Không thể lấy lộ trình.')
+                        print(f"Lỗi API: {error_message}")
+                        voice_service.speak(f"Lỗi: {error_message}. Thử lại.")
+                    else:
+                        voice_service.speak("Không thể kết nối hoặc nhận dữ liệu từ máy chủ dẫn đường. Thử lại.")
+                    
+                    if reroute_attempts >= MAX_REROUTE_ATTEMPTS:
+                        print("Đã thử tìm lại đường quá nhiều lần. Bắt đầu lại từ đầu.")
+                        voice_service.speak("Không thể tìm được đường đi sau nhiều lần thử. Vui lòng nói lại điểm đến.")
+                        break
+    except Exception as e:
+        print(f"Lỗi trong luồng xử lý yêu cầu: {e}")
+    finally:
+        print("Đã dừng luồng xử lý yêu cầu")
 
-            distance = estimate_distance(box_width)
-            direction = determine_direction(box_center_x)
+def cleanup_resources(gps_service):
+    # Dọn dẹp tài nguyên
+    if gps_service:
+        gps_service.cleanup()
+    print("Đã dọn dẹp tài nguyên")
 
-            if distance == "close" and frame_count - last_notification_frame > 10:
-                message = f"Vật cản {class_name} ở bên {direction}, di chuyển sang {'trái' if direction == 'phải' else 'phải'}"
-                add_notification(message, priority=1, repeat=True)
-                last_notification_frame = frame_count
+if __name__ == "__main__":    
+    try:
+        # Khởi tạo các dịch vụ dùng chung
+        voice_service = VoiceService()
+        gps_service = GPSService()
+        api_service = APIService()
+        
+        # Tạo các thread riêng cho từng hàm
+        t1 = threading.Thread(target=init_cam_bien_layser, args=(voice_service,), daemon=True)
+        t2 = threading.Thread(target=init_phan_doan_lan_duong, daemon=True)
+        t3 = threading.Thread(target=xu_ly_yeu_cau, args=(voice_service, gps_service, api_service), daemon=True)
 
-    cuda.Context.synchronize()
+        # Khởi động các thread
+        t1.start()
+        t2.start()
+        t3.start()
 
-# Giải phóng tài nguyên
-cap.release()
+        # Chờ các thread hoàn thành (sẽ không bao giờ kết thúc trừ khi có Ctrl+C)
+        while running:
+            time.sleep(1)
+            
+    except KeyboardInterrupt:
+        print("\nĐã nhận tín hiệu kết thúc từ bàn phím")
+    except Exception as e:
+        print(f"Lỗi chương trình chính: {e}")
+    finally:
+        # Đánh dấu dừng các luồng
+        running = False
+        
+        # Dọn dẹp tài nguyên
+        cleanup_resources(gps_service)
+        
+        print("Chương trình đã kết thúc.")
