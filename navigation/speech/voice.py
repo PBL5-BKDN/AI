@@ -10,6 +10,9 @@ class VoiceService:
     def __init__(self):
         pygame.mixer.init()
         self.recognizer = sr.Recognizer()
+        print(len(sr.Microphone.list_microphone_names()), "microphones found")
+        for index, name in enumerate(sr.Microphone.list_microphone_names()):
+            print("Microphone with name \"{1}\" found for `Microphone(device_index={0})`".format(index, name))
         
     def speak(self, text):
         """
@@ -40,9 +43,9 @@ class VoiceService:
         Returns:
             str: Recognized text or None if recognition failed
         """
-        with sr.Microphone() as source:
-            print("🎤 Nói đích của bạn:")
+        with sr.Microphone(device_index=11) as source:
             self.recognizer.adjust_for_ambient_noise(source)
+            print("Đang lắng nghe từ mic ...")
             audio = self.recognizer.listen(source)
             
         try:
