@@ -8,25 +8,15 @@ import os
 import time
 import pygame
 import logging
-
-# Set up logging
-logging.basicConfig(
-    filename='logs/vision_assist.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    filemode='a'
-)
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-logging.getLogger('').addHandler(console)
-
+import os 
 # Initialize ONNX Runtime session
-onnx_model_path = 'model/enet.onnx'
+
+onnx_model_path = "/home/jetson/AI/jetson_nano/model/enet.onnx"
 try:
-    session = ort.InferenceSession(onnx_model_path, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-    logging.info("ONNX model loaded successfully")
+    session = ort.InferenceSession(onnx_model_path, providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+    print("ONNX model loaded successfully")
 except Exception as e:
-    logging.error(f"Failed to load ONNX model: {e}")
+    print(f"Failed to load ONNX model: {e}")
     raise
 
 input_name = session.get_inputs()[0].name
@@ -154,28 +144,34 @@ def speak_guidance(guidance):
                 pygame.time.Clock().tick(10)
             pygame.mixer.quit()
             os.remove("temp.mp3")
-            logging.info(f"Played guidance: {guidance}")
+            print(f"Played guidance: {guidance}")
     except Exception as e:
-        logging.error(f"Failed to play audio: {e}")
+        print(f"Failed to play audio: {e}")
 
 # Function to process camera input
-def predict_camera(device_id=0, frame_skip=2):
+def predict_camera(video_capture,camera_lock, running=True,frame_skip=2):
     try:
         # Use GStreamer pipeline for CSI camera, or device_id for USB webcam
-        cap = cv2.VideoCapture(device_id if isinstance(device_id, int) else device_id)
+        cap = video_capture
         if not cap.isOpened():
             raise ValueError("Không thể mở camera.")
 
-        logging.info("Camera opened successfully")
+        print(cap.isOpened())
+        print(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        print(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        print("Camera opened successfully")
 
         last_guidance = ""
         last_speak_time = 0
         frame_count = 0
 
-        while cap.isOpened():
-            ret, frame = cap.read()
+        while running:
+            print("Đang phán đoán làng đường...")
+            with camera_lock:
+                ret, frame = cap.read()
             if not ret:
-                logging.warning("Failed to capture frame")
+                print("Failed to capture frame")
                 break
 
             # Skip frames to reduce load
@@ -197,7 +193,7 @@ def predict_camera(device_id=0, frame_skip=2):
 
             guidance, priority = generate_guidance(pred)
             if guidance != last_guidance and (time.time() - last_speak_time > 2):
-                logging.info(f"Khung hình {frame_count}: {guidance}")
+                print(f"Khung hình {frame_count}: {guidance}")
                 print(f"Khung hình {frame_count}: {guidance}")
                 speak_guidance(guidance)
                 last_guidance = guidance
@@ -207,18 +203,18 @@ def predict_camera(device_id=0, frame_skip=2):
             #logging.info(f"Đã xử lý khung hình {frame_count}")
 
         cap.release()
-        logging.info("Camera processing stopped.")
+        print("Camera processing stopped.")
     except Exception as e:
-        logging.error(f"Camera processing failed: {e}")
+        print(f"Camera processing failed: {e}")
         if 'cap' in locals() and cap.isOpened():
             cap.release()
         raise
 
-# Run the demo
-if __name__ == "__main__":
-    # Use device_id=0 for USB webcam, or GStreamer pipeline for CSI camera
-    camera_source = 0  # Change to GStreamer pipeline if using CSI camera
-    try:
-        predict_camera(camera_source, frame_skip=2)
-    except Exception as e:
-        logging.error(f"Program failed: {e}")
+# # Run the demo
+# if __name__ == "__main__":
+#     # Use device_id=0 for USB webcam, or GStreamer pipeline for CSI camera
+#     camera_source = 0  # Change to GStreamer pipeline if using CSI camera
+#     try:
+#         predict_camera(camera_source, frame_skip=2)
+#     except Exception as e:
+#         print(f"Program failed: {e}")

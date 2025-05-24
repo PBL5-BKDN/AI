@@ -12,7 +12,7 @@ import board
 import io
 import logging
 sys.path.insert(0, "build/lib.linux-armv7l-2.7/")
-
+from jetson_nano.code.main import predict_camera
 import adafruit_vl53l1x
 import requests
 from utils import handle_take_photo
@@ -35,16 +35,11 @@ def gstreamer_pipeline(
         "nvvidconv flip-method=%d ! "
         "video/x-raw, width=(int)%d, height=(int)%d, format=(string)BGRx ! "
         "videoconvert ! "
-        "video/x-raw, format=(string)BGR ! appsink"
-        % (
-            sensor_id,
-            capture_width,
-            capture_height,
-            framerate,
-            flip_method,
-            display_width,
-            display_height,
-        )
+        "video/x-raw, format=(string)BGR ! "
+        "appsink max-buffers=1 drop=true sync=false emit-signals=true"
+        % (sensor_id, capture_width, capture_height,
+           framerate, flip_method,
+           display_width, display_height)
     )
 # Xử lý tín hiệu kết thúc (Ctrl+C)
 def signal_handler(sig, frame):
@@ -56,65 +51,103 @@ def signal_handler(sig, frame):
 # Đăng ký handler cho tín hiệu SIGINT (Ctrl+C)
 signal.signal(signal.SIGINT, signal_handler)
 
-def init_cam_bien_layser(voice_service):
-    try:
-        # Khởi tạo I2C và cảm biến VL53L1X
-        i2c = board.I2C()  # Sử dụng I2C bus 1 trên Jetson Nano
-        tof = adafruit_vl53l1x.VL53L1X(i2c)
-        print("Đang khởi tạo cảm biến VL53L1X...")
-        
-        # Cấu hình khoảng cách tối đa (Long Range, lên đến 4m)
-        tof.distance_mode = 2  # 1 = Short, 2 = Long
-        tof.timing_budget = 300  # Thời gian đo 100ms cho độ chính xác cao
-        tof.start_ranging()
-        print("Cảm biến VL53L1X khởi tạo thành công, bắt đầu đo khoảng cách")
-        
-        while running:
+def init_cam_bien_layser(voice_service, video_capture):
+    tof = None
+    
+    while running:
+        try:
+            # Nếu cảm biến chưa được khởi tạo, khởi tạo nó
+            if tof is None:
+                # Khởi tạo I2C và cảm biến VL53L1X
+                print("Đang khởi tạo cảm biến VL53L1X...")
+                i2c = board.I2C()
+                tof = adafruit_vl53l1x.VL53L1X(i2c)
+                
+                # Cấu hình cảm biến
+                tof.distance_mode = 2  # 1 = Short, 2 = Long
+                tof.timing_budget = 200  # Thời gian đo 100ms cho độ chính xác cao
+                tof.start_ranging()
+                print("Cảm biến VL53L1X khởi tạo thành công, bắt đầu đo khoảng cách")
+            
+            # Đọc dữ liệu từ cảm biến
             if tof.data_ready:
-                distance = tof.distance
-                print(f"Khoảng cách đo được: {distance} cm")
-                if distance is not None and distance >= 0:
-                    if 50 <= distance <= 100:
-                        print("Vật cản trong phạm vi 0,5 - 1 mét!")
-                        voice_service.speak("Cảnh báo: Vật cản trong phạm vi 0,5 - 1 mét!")
-                        image_file = handle_take_photo(camera_lock, video_capture)
-                        if image_file is None:
-                            print("Không chụp được ảnh từ camera.")
+                try:
+                    distance = tof.distance
+                    print(f"Khoảng cách đo được: {distance} cm")
+                    
+                    if distance is not None and distance >= 0:
+                        if 50 <= distance <= 100:
+                            print("Vật cản trong phạm vi 0,5 - 1 mét!")
+                            voice_service.speak("Cảnh báo: Vật cản trong phạm vi 0,5 - 1 mét!")
+                            
+                            try:
+                                image_file = handle_take_photo(camera_lock, video_capture)
+                                if image_file is None:
+                                    print("Không chụp được ảnh từ camera.")
+                                else:
+                                    try:
+                                        files = {'image':('obstacle.jpg', image_file, 'image/jpeg')}
+                                        response = requests.post("http://14.233.84.201:3000/detect", files=files)
+                                        data = response.json()
+                                        print(f"Dữ liệu từ API: {data}")
+                                        voice_service.speak(data["data"] if "data" in data else "Không phát hiện vật cản.")
+                                        time.sleep(10)
+                                    except requests.RequestException as e:
+                                        print(f"Lỗi gửi yêu cầu HTTP: {e}")
+                            except Exception as cam_err:
+                                print(f"Lỗi khi chụp ảnh: {cam_err}")
+                    else:
+                        print("Khoảng cách không hợp lệ")
+                    
+                    try:
+                        tof.clear_interrupt()
+                    except Exception as clear_err:
+                        print(f"Lỗi khi xóa ngắt: {clear_err}")
+                        raise OSError("Không thể xóa ngắt, cần tái khởi tạo")
+                        
+                except OSError as io_err:
+                    print(f"Lỗi I/O khi đọc cảm biến: {io_err}")
+                    if tof is not None:
                         try:
-                            files = {'image':('obstacle.jpg', image_file, 'image/jpeg')}
-                            response = requests.post("http://14.233.84.201:3000/detect", files=files)
-                            data = response.json()
-                            print(f"Dữ liệu từ API: {data}")
-                            voice_service.speak(data["data"] if "data" in data else "Không phát hiện vật cản.")
-                            time.sleep(10)
-                        except requests.RequestException as e:
-                            print(f"Lỗi gửi yêu cầu HTTP: {e}")
-                else:
-                    print("Khoảng cách không hợp lệ")
-                tof.clear_interrupt()  # Xóa cờ ngắt
-            time.sleep(1)  # Tần suất đo 1 lần/giây
-    except Exception as e:
-        print(f"Lỗi trong luồng cảm biến: {e}")
-    finally:
+                            tof.stop_ranging()
+                        except:
+                            pass
+                        tof = None
+                    time.sleep(2)  # Chờ một lúc trước khi tái khởi tạo
+                    continue
+            
+            time.sleep(0.5)  # Đợi 0.5 giây giữa các lần đọc
+            
+        except Exception as e:
+            print(f"Lỗi trong luồng cảm biến: {e}")
+            # Dọn dẹp cảm biến hiện tại nếu có lỗi
+            if tof is not None:
+                try:
+                    tof.stop_ranging()
+                except Exception:
+                    pass
+                tof = None
+            time.sleep(2)  # Đợi trước khi thử lại
+    
+    # Dừng cảm biến khi thoát khỏi vòng lặp
+    if tof is not None:
         try:
             tof.stop_ranging()
             print("Đã dừng cảm biến VL53L1X")
         except Exception as e:
-            print(f"Lỗi khi dừng cảm biến: {e}")    # Khởi tạo cảm biến
+            print(f"Lỗi khi dừng cảm biến: {e}")
 
 
-def init_phan_doan_lan_duong():
+def init_phan_doan_lan_duong(video_capture, camera_lock):
     print("Khởi tạo phân đoán làng đường")
     try:
-        while running:
-            print("Đang phán đoán làng đường...")
-            time.sleep(5)
+        predict_camera(video_capture, camera_lock, running=True, frame_skip=2)
     except Exception as e:
         print(f"Lỗi trong luồng phân đoán làng đường: {e}")
     finally:
         print("Đã dừng luồng phân đoán làng đường")
 
-def handle_ask_chatbot(voice_service, question):
+def handle_ask_chatbot(voice_service, question, video_capture):
     print("Xử lý yêu cầu chatbot")
     import  requests
     image_file = handle_take_photo(camera_lock, video_capture)
@@ -144,7 +177,6 @@ def handle_navigtion(navigator, gps_service):
     
     # Navigation loop
     reroute_attempts = 0
-    
     while reroute_attempts < MAX_REROUTE_ATTEMPTS and running:
         print(f"Đang yêu cầu lộ trình từ API (Lần {reroute_attempts + 1})...")
         response_data = navigator.request_route(initial_lat, initial_lng, destination)
@@ -184,27 +216,29 @@ def handle_navigtion(navigator, gps_service):
                 break
 
 
-def xu_ly_yeu_cau(voice_service, gps_service, api_service): 
+def xu_ly_yeu_cau(voice_service, gps_service, api_service, video_capture): 
     print("Khởi tạo hệ thống dẫn đường")
-    
-    # Initialize navigator
     navigator = Navigator(gps_service, voice_service, api_service)
     try:
         while running:
             text = voice_service.recognize_speech()
             print(f"Đã nhận diện: {text}")
-            if text and text.startswith("tâm"):
-                handle_ask_chatbot(voice_service, text)
-            elif text and text.startswith("nguyên"):
-                handle_navigtion(navigator, gps_service)
-            else:
-                voice_service.speak("Yêu cầu không hợp lệ. Vui lòng thử lại.")   
-            time.sleep(1)   
+            if text:
+                words = text.strip().lower().split()
+                if words:
+                    first_word = words[0]
+                    if first_word in ["2", "hai"]:
+                        textvoice = ' '.join(words[1:])
+                        handle_ask_chatbot(voice_service, textvoice, video_capture)
+                    elif first_word in ["3", "ba"]:
+                        handle_navigtion(navigator, gps_service)
+                    else:
+                        voice_service.speak("Yêu cầu không hợp lệ. Vui lòng thử lại.")
+            time.sleep(1)
     except Exception as e:
         print(f"Lỗi trong luồng xử lý yêu cầu: {e}")
     finally:
         print("Đã dừng luồng xử lý yêu cầu")
-
 def cleanup_resources(gps_service):
     # Dọn dẹp tài nguyên
     if gps_service:
@@ -212,12 +246,48 @@ def cleanup_resources(gps_service):
     print("Đã dọn dẹp tài nguyên")
 
 if __name__ == "__main__":    
+    video_capture = None
     try:
-        # Khởi tạo camera CSI
-        video_capture = cv2.VideoCapture(gstreamer_pipeline(flip_method=0), cv2.CAP_GSTREAMER)
-        if not video_capture.isOpened():
-            raise Exception("Không thể mở camera CSI")
-        print("Camera CSI khởi tạo thành công")
+        # Khởi tạo camera CSI với retry mechanism
+        max_camera_retries = 5
+        for attempt in range(max_camera_retries):
+            try:
+                gst = gstreamer_pipeline(flip_method=0)
+                print(f"GStreamer pipeline (lần thử {attempt + 1}): {gst}")
+                video_capture = cv2.VideoCapture(gst, cv2.CAP_GSTREAMER)
+                
+                if video_capture.isOpened():
+                    # Test đọc frame để đảm bảo camera hoạt động
+                    ret, test_frame = video_capture.read()
+                    if ret and test_frame is not None:
+                        print("Camera CSI khởi tạo thành công")
+                        print(f"Độ phân giải camera: {video_capture.get(cv2.CAP_PROP_FRAME_WIDTH)}x{video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT)}")
+                        print(f"FPS: {video_capture.get(cv2.CAP_PROP_FPS)}")
+                        break
+                    else:
+                        print(f"Camera mở nhưng không đọc được frame (lần thử {attempt + 1})")
+                        video_capture.release()
+                        video_capture = None
+                else:
+                    print(f"Không thể mở camera CSI (lần thử {attempt + 1})")
+                    if video_capture:
+                        video_capture.release()
+                        video_capture = None
+                        
+                if attempt < max_camera_retries - 1:
+                    time.sleep(2)  # Đợi trước khi thử lại
+                    
+            except Exception as camera_err:
+                print(f"Lỗi khởi tạo camera (lần thử {attempt + 1}): {camera_err}")
+                if video_capture:
+                    video_capture.release()
+                    video_capture = None
+                if attempt < max_camera_retries - 1:
+                    time.sleep(2)
+        
+        if not video_capture or not video_capture.isOpened():
+            raise Exception("Không thể khởi tạo camera CSI sau nhiều lần thử")
+            
         # Khởi tạo các dịch vụ dùng chung
         voice_service = VoiceService()
         gps_service = None
@@ -230,14 +300,14 @@ if __name__ == "__main__":
             raise
         
         # Tạo các thread riêng cho từng hàm
-        t1 = threading.Thread(target=init_cam_bien_layser, args=(voice_service,), daemon=True)
-        t2 = threading.Thread(target=init_phan_doan_lan_duong, daemon=True)
-        t3 = threading.Thread(target=xu_ly_yeu_cau, args=(voice_service, gps_service, api_service), daemon=True)
+        t1 = threading.Thread(target=init_cam_bien_layser, args=(voice_service, video_capture), daemon=True)
+        t2 = threading.Thread(target=init_phan_doan_lan_duong, args=(video_capture, camera_lock), daemon=True)
+        t3 = threading.Thread(target=xu_ly_yeu_cau, args=(voice_service, gps_service, api_service, video_capture), daemon=True)
 
         # Khởi động các thread
         t1.start()
-        t2.start()
-        t3.start()
+        # t2.start()
+        # t3.start()
 
         # Chờ các thread hoàn thành (sẽ không bao giờ kết thúc trừ khi có Ctrl+C)
         while running:
@@ -246,11 +316,11 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nĐã nhận tín hiệu kết thúc từ bàn phím")
     except Exception as e:
-        pass
+        print(f"Lỗi chương trình: {e}")
     finally:
-        # Đánh dấu dừng các luồng
         running = False
-        # Dọn dẹp tài nguyên
-        # cleanup_resources(gps_service)
-        
+        if video_capture and video_capture.isOpened():
+            video_capture.release()
+            print("Đã giải phóng camera")
+        cleanup_resources(gps_service)   
         print("Chương trình đã kết thúc.")
