@@ -238,26 +238,26 @@ def predict_source(source, frame_skip=2, save_images=False, output_dir="output_i
         raise
 
 def predict_source_main():
-    # Lựa chọn nguồn đầu vào
-    print("Chọn nguồn đầu vào:")
-    print("1. Camera (USB hoặc CSI)")
-    print("2. File video")
-    choice = input("Nhập lựa chọn (1 hoặc 2): ")
+    # # Lựa chọn nguồn đầu vào
+    # print("Chọn nguồn đầu vào:")
+    # print("1. Camera (USB hoặc CSI)")
+    # print("2. File video")
+    # choice = input("Nhập lựa chọn (1 hoặc 2): ")
 
     save_images = True
     image_save_interval = 100  # Mặc định lưu mỗi 100 khung hình
     output_dir = "output_images"
 
-    if choice == "1":
-        source = 0  # Camera USB hoặc CSI (thay bằng pipeline GStreamer nếu cần)
-    elif choice == "2":
-        source = "jetson_nano/code/test_2.mp4"
-        if not os.path.exists(source):
-            print("File video không tồn tại!")
-            exit()
-    else:
-        print("Lựa chọn không hợp lệ!")
+    # if choice == "1":
+    #     source = 0  # Camera USB hoặc CSI (thay bằng pipeline GStreamer nếu cần)
+    # elif choice == "2":
+    source = "jetson_nano/code/test_2.mp4"
+    if not os.path.exists(source):
+        print("File video không tồn tại!")
         exit()
+    # else:
+    #     print("Lựa chọn không hợp lệ!")
+    #     exit()
 
     try:
         predict_source(source, frame_skip=2, save_images=save_images, output_dir=output_dir, image_save_interval=image_save_interval)
