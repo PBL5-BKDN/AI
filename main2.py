@@ -171,10 +171,10 @@ def init_cam_bien_layser(voice_service):
             print(f"Lỗi khi dừng cảm biến: {e}")
 
 
-def init_phan_doan_lan_duong(video_capture, camera_lock):
+def init_phan_doan_lan_duong(cap, camera_lock):
     print("Khởi tạo phân đoán làng đường")
     try:
-        predict_camera(video_capture, camera_lock, running=True, frame_skip=2)
+        predict_camera(cap, camera_lock, running=True, frame_skip=2, capture_image_fn=capture_image)
     except Exception as e:
         print(f"Lỗi trong luồng phân đoán làng đường: {e}")
     finally:
@@ -257,7 +257,7 @@ def handle_navigtion(navigator, gps_service):
                 break
 
 
-def xu_ly_yeu_cau(voice_service, gps_service, api_service, video_capture): 
+def xu_ly_yeu_cau(voice_service, gps_service, api_service): 
     print("Khởi tạo hệ thống dẫn đường")
     try:
         while running:
@@ -345,13 +345,13 @@ if __name__ == "__main__":
         
         # Tạo các thread riêng cho từng hàm
         #t1 = threading.Thread(target=init_cam_bien_layser, args=(voice_service,), daemon=True)
-        # t2 = threading.Thread(target=init_phan_doan_lan_duong, args=(video_capture, camera_lock), daemon=True)
-        t3 = threading.Thread(target=xu_ly_yeu_cau, args=(voice_service, gps_service, api_service, video_capture), daemon=True)
+        t2 = threading.Thread(target=init_phan_doan_lan_duong, args=(cap, camera_lock), daemon=True)
+        # t3 = threading.Thread(target=xu_ly_yeu_cau, args=(voice_service, gps_service, api_service), daemon=True)
 
         # Khởi động các thread
         # t1.start()
-        # t2.start()
-        t3.start()
+        t2.start()
+        # t3.start()
 
         # Chờ các thread hoàn thành (sẽ không bao giờ kết thúc trừ khi có Ctrl+C)
         while running:

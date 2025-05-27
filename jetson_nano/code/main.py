@@ -149,19 +149,9 @@ def speak_guidance(guidance):
         print(f"Failed to play audio: {e}")
 
 # Function to process camera input
-def predict_camera(video_capture,camera_lock, running=True,frame_skip=2):
+def predict_camera(cap, camera_lock, running=True, frame_skip=2, capture_image_fn=None):
+    
     try:
-        # Use GStreamer pipeline for CSI camera, or device_id for USB webcam
-        cap = video_capture
-        if not cap.isOpened():
-            raise ValueError("Không thể mở camera.")
-
-        print(cap.isOpened())
-        print(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        print(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-        print("Camera opened successfully")
-
         last_guidance = ""
         last_speak_time = 0
         frame_count = 0
@@ -194,13 +184,19 @@ def predict_camera(video_capture,camera_lock, running=True,frame_skip=2):
             guidance, priority = generate_guidance(pred)
             if guidance != last_guidance and (time.time() - last_speak_time > 2):
                 print(f"Khung hình {frame_count}: {guidance}")
-                print(f"Khung hình {frame_count}: {guidance}")
                 speak_guidance(guidance)
+                
+                # Chụp ảnh khi phát hiện lề đường hoặc cảnh báo quan trọng
+                if capture_image_fn and ("lề đường" in guidance.lower() or priority in ["không an toàn", "chướng ngại"]):
+                    timestamp = time.strftime("%Y%m%d_%H%M%S")
+                    image_filename = f"warning_{timestamp}.jpg"
+                    capture_image_fn(image_filename)
+                    print(f"Đã chụp ảnh cảnh báo: {image_filename}")
+                
                 last_guidance = guidance
                 last_speak_time = time.time()
 
             frame_count += 1
-            #logging.info(f"Đã xử lý khung hình {frame_count}")
 
         cap.release()
         print("Camera processing stopped.")
