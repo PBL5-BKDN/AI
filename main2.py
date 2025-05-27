@@ -174,7 +174,7 @@ def init_cam_bien_layser(voice_service):
 def init_phan_doan_lan_duong(video_capture, camera_lock):
     print("Khởi tạo phân đoán làng đường")
     try:
-        predict_camera(video_capture, camera_lock, running=True, frame_skip=2)
+        predict_camera(video_capture, camera_lock, running=True, frame_skip=2, capture_image_fn=capture_image)
     except Exception as e:
         print(f"Lỗi trong luồng phân đoán làng đường: {e}")
     finally:
