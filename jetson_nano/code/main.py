@@ -8,20 +8,23 @@ import os
 import time
 import pygame
 import logging
-import os 
-# Initialize ONNX Runtime session
+from datetime import datetime
 
+# Khởi tạo logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Khởi tạo ONNX Runtime session
 onnx_model_path = "/home/jetson/AI/jetson_nano/model/enet.onnx"
 try:
     session = ort.InferenceSession(onnx_model_path, providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
-    print("ONNX model loaded successfully")
+    logging.info("ONNX model loaded successfully")
 except Exception as e:
-    print(f"Failed to load ONNX model: {e}")
+    logging.error(f"Failed to load ONNX model: {e}")
     raise
 
 input_name = session.get_inputs()[0].name
 
-# Define preprocessing
+# Định nghĩa preprocessing
 input_size = (512, 256)  # (height, width)
 transform = transforms.Compose([
     transforms.Resize(input_size),
@@ -29,7 +32,7 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
-# Define class names and color palette
+# Định nghĩa danh sách lớp và bảng màu
 class_names = [
     "Đường", "Vạch kẻ đường", "Làn xe chạy", "Làn dịch vụ",
     "Vạch qua đường", "Lề đường", "Rào chắn", "Vỉa hè", "Nền"
@@ -39,7 +42,16 @@ color_palette = [
     [255, 255, 0], [255, 0, 255], [0, 255, 255], [255, 128, 0], [128, 0, 128]
 ]
 
-# Function to determine the dominant region
+# Hàm tạo bản đồ phân đoạn từ dự đoán
+def create_segmentation_map(pred, color_palette, output_size):
+    height, width = output_size
+    pred_resized = cv2.resize(pred.astype(np.uint8), (width, height), interpolation=cv2.INTER_NEAREST)
+    segmentation_map = np.zeros((height, width, 3), dtype=np.uint8)
+    for class_id, color in enumerate(color_palette):
+        segmentation_map[pred_resized == class_id] = color
+    return segmentation_map
+
+# Hàm xác định vùng chiếm ưu thế
 def get_dominant_region(left_prop, center_prop, right_prop):
     safe_classes = [7, 4]  # Vỉa hè (7), Vạch qua đường (4)
     for cls in safe_classes:
@@ -51,17 +63,17 @@ def get_dominant_region(left_prop, center_prop, right_prop):
             return "giữa", cls
     return None, None
 
-# Function to analyze regions and generate guidance
+# Hàm phân tích vùng và tạo hướng dẫn
 def generate_guidance(pred):
     pred = np.where(pred == 7, 6, pred)
     pred = np.where(pred == 8, 7, pred)
     pred = np.where(pred == 9, 8, pred)
 
     height, width = pred.shape
-    left_region = pred[:, 2*width//3:]  # Right side (left from viewer's perspective)
+    left_region = pred[:, 2*width//3:]  # Right side
     center_region = pred[:, width//3:2*width//3]
-    right_region = pred[:, :width//3]  # Left side (right from viewer's perspective)
-    bottom_region = pred[2*height//3:, :]  # Bottom third
+    right_region = pred[:, :width//3]  # Left side
+    bottom_region = pred[2*height//3:, :]
     bottom_center_region = pred[2*height//3:, width//3:2*width//3]
 
     def get_proportions(region):
@@ -131,7 +143,7 @@ def generate_guidance(pred):
 
     return guidance, priority
 
-# Function to play audio guidance
+# Hàm phát âm thanh hướng dẫn
 def speak_guidance(guidance):
     try:
         if guidance:
@@ -144,77 +156,111 @@ def speak_guidance(guidance):
                 pygame.time.Clock().tick(10)
             pygame.mixer.quit()
             os.remove("temp.mp3")
-            print(f"Played guidance: {guidance}")
+            logging.info(f"Played guidance: {guidance}")
     except Exception as e:
-        print(f"Failed to play audio: {e}")
+        logging.error(f"Failed to play audio: {e}")
 
-# Function to process camera input
-def predict_camera(video_capture,camera_lock, running=True,frame_skip=2):
+# Hàm xử lý camera hoặc video
+def predict_source(source, frame_skip=2, save_images=False, output_dir="output_images", image_save_interval=100):
     try:
-        # Use GStreamer pipeline for CSI camera, or device_id for USB webcam
-        cap = video_capture
+        # Khởi tạo nguồn video
+        cap = cv2.VideoCapture(source)
         if not cap.isOpened():
-            raise ValueError("Không thể mở camera.")
+            raise ValueError(f"Không thể mở nguồn: {source}")
 
-        print(cap.isOpened())
-        print(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        print(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        # Lấy thông số video
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30  # Mặc định 30 FPS nếu không xác định
 
-        print("Camera opened successfully")
+        logging.info(f"Source opened: {source}, {width}x{height}, {fps} FPS")
+
+        # Tạo thư mục lưu ảnh nếu cần
+        if save_images:
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+                logging.info(f"Created output directory: {output_dir}")
 
         last_guidance = ""
         last_speak_time = 0
         frame_count = 0
 
-        while running:
-            print("Đang phán đoán làng đường...")
-            with camera_lock:
-                ret, frame = cap.read()
+        while True:
+            ret, frame = cap.read()
             if not ret:
-                print("Failed to capture frame")
+                logging.info("End of video or failed to capture frame")
                 break
 
-            # Skip frames to reduce load
+            # Bỏ qua khung hình để giảm tải
             if frame_count % frame_skip != 0:
                 frame_count += 1
                 continue
 
+            # Xử lý khung hình
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             image = Image.fromarray(frame_rgb)
             input_tensor = transform(image).numpy()
             input_tensor = np.expand_dims(input_tensor, axis=0).astype(np.float32)
 
+            # Suy luận mô hình
             outputs = session.run(None, {input_name: input_tensor})[0]
             pred = np.argmax(outputs, axis=1).squeeze(0)
 
-            pred = np.where(pred == 7, 6, pred)
-            pred = np.where(pred == 8, 7, pred)
-            pred = np.where(pred == 9, 8, pred)
-
+            # Tạo hướng dẫn
             guidance, priority = generate_guidance(pred)
             if guidance != last_guidance and (time.time() - last_speak_time > 2):
-                print(f"Khung hình {frame_count}: {guidance}")
-                print(f"Khung hình {frame_count}: {guidance}")
+                logging.info(f"Frame {frame_count}: {guidance}")
                 speak_guidance(guidance)
                 last_guidance = guidance
                 last_speak_time = time.time()
 
+            # Lưu ảnh đầu vào và đầu ra nếu cần
+            if save_images and frame_count % image_save_interval == 0:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                # Lưu ảnh đầu vào
+                input_image_path = os.path.join(output_dir, f"input_frame_{frame_count}_{timestamp}.jpg")
+                cv2.imwrite(input_image_path, frame)
+                logging.info(f"Saved input image: {input_image_path}")
+                # Lưu ảnh đầu ra (bản đồ phân đoạn)
+                seg_map = create_segmentation_map(pred, color_palette, (width, height))
+                output_image_path = os.path.join(output_dir, f"output_frame_{frame_count}_{timestamp}.jpg")
+                cv2.imwrite(output_image_path, seg_map)
+                logging.info(f"Saved output image: {output_image_path}")
+
             frame_count += 1
-            #logging.info(f"Đã xử lý khung hình {frame_count}")
 
         cap.release()
-        print("Camera processing stopped.")
+        logging.info("Source processing stopped.")
     except Exception as e:
-        print(f"Camera processing failed: {e}")
+        logging.error(f"Processing failed: {e}")
         if 'cap' in locals() and cap.isOpened():
             cap.release()
         raise
 
-# # Run the demo
-# if __name__ == "__main__":
-#     # Use device_id=0 for USB webcam, or GStreamer pipeline for CSI camera
-#     camera_source = 0  # Change to GStreamer pipeline if using CSI camera
-#     try:
-#         predict_camera(camera_source, frame_skip=2)
-#     except Exception as e:
-#         print(f"Program failed: {e}")
+# Chạy chương trình
+if __name__ == "__main__":
+    # Lựa chọn nguồn đầu vào
+    print("Chọn nguồn đầu vào:")
+    print("1. Camera (USB hoặc CSI)")
+    print("2. File video")
+    choice = input("Nhập lựa chọn (1 hoặc 2): ")
+
+    save_images = True
+    image_save_interval = 100  # Mặc định lưu mỗi 100 khung hình
+    output_dir = "output_images"
+
+    if choice == "1":
+        source = 0  # Camera USB hoặc CSI (thay bằng pipeline GStreamer nếu cần)
+    elif choice == "2":
+        source = "jetson_nano/code/test_2.mp4"
+        if not os.path.exists(source):
+            print("File video không tồn tại!")
+            exit()
+    else:
+        print("Lựa chọn không hợp lệ!")
+        exit()
+
+    try:
+        predict_source(source, frame_skip=2, save_images=save_images, output_dir=output_dir, image_save_interval=image_save_interval)
+    except Exception as e:
+        logging.error(f"Program failed: {e}")
