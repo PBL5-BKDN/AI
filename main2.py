@@ -171,10 +171,10 @@ def init_cam_bien_layser(voice_service):
             print(f"Lỗi khi dừng cảm biến: {e}")
 
 
-def init_phan_doan_lan_duong(video_capture, camera_lock):
+def init_phan_doan_lan_duong(cap, camera_lock):
     print("Khởi tạo phân đoán làng đường")
     try:
-        predict_camera(video_capture, camera_lock, running=True, frame_skip=2, capture_image_fn=capture_image)
+        predict_camera(cap, camera_lock, running=True, frame_skip=2)
     except Exception as e:
         print(f"Lỗi trong luồng phân đoán làng đường: {e}")
     finally:
@@ -257,7 +257,7 @@ def handle_navigtion(navigator, gps_service):
                 break
 
 
-def xu_ly_yeu_cau(voice_service, gps_service, api_service, video_capture): 
+def xu_ly_yeu_cau(voice_service, gps_service, api_service): 
     print("Khởi tạo hệ thống dẫn đường")
     try:
         while running:
@@ -288,47 +288,7 @@ def cleanup_resources():
     print("Đã dọn dẹp tài nguyên")
 
 if __name__ == "__main__":    
-    video_capture = None
     try:
-        # Khởi tạo camera CSI với retry mechanism
-        # max_camera_retries = 5
-        # for attempt in range(max_camera_retries):
-        #     try:
-        #         gst = gstreamer_pipeline(flip_method=0)
-        #         print(f"GStreamer pipeline (lần thử {attempt + 1}): {gst}")
-        #         video_capture = cv2.VideoCapture(gst, cv2.CAP_GSTREAMER)
-                
-        #         if video_capture.isOpened():
-        #             # Test đọc frame để đảm bảo camera hoạt động
-        #             ret, test_frame = video_capture.read()
-        #             if ret and test_frame is not None:
-        #                 print("Camera CSI khởi tạo thành công")
-        #                 print(f"Độ phân giải camera: {video_capture.get(cv2.CAP_PROP_FRAME_WIDTH)}x{video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT)}")
-        #                 print(f"FPS: {video_capture.get(cv2.CAP_PROP_FPS)}")
-        #                 break
-        #             else:
-        #                 print(f"Camera mở nhưng không đọc được frame (lần thử {attempt + 1})")
-        #                 video_capture.release()
-        #                 video_capture = None
-        #         else:
-        #             print(f"Không thể mở camera CSI (lần thử {attempt + 1})")
-        #             if video_capture:
-        #                 video_capture.release()
-        #                 video_capture = None
-                        
-        #         if attempt < max_camera_retries - 1:
-        #             time.sleep(2)  # Đợi trước khi thử lại
-                    
-        #     except Exception as camera_err:
-        #         print(f"Lỗi khởi tạo camera (lần thử {attempt + 1}): {camera_err}")
-        #         if video_capture:
-        #             video_capture.release()
-        #             video_capture = None
-        #         if attempt < max_camera_retries - 1:
-        #             time.sleep(2)
-        
-        # if not video_capture or not video_capture.isOpened():
-        #     raise Exception("Không thể khởi tạo camera CSI sau nhiều lần thử")
             
         # Khởi tạo các dịch vụ dùng chung
         voice_service = VoiceService()
@@ -345,13 +305,13 @@ if __name__ == "__main__":
         
         # Tạo các thread riêng cho từng hàm
         #t1 = threading.Thread(target=init_cam_bien_layser, args=(voice_service,), daemon=True)
-        # t2 = threading.Thread(target=init_phan_doan_lan_duong, args=(video_capture, camera_lock), daemon=True)
-        t3 = threading.Thread(target=xu_ly_yeu_cau, args=(voice_service, gps_service, api_service, video_capture), daemon=True)
+        t2 = threading.Thread(target=init_phan_doan_lan_duong, args=(cap, camera_lock), daemon=True)
+        # t3 = threading.Thread(target=xu_ly_yeu_cau, args=(voice_service, gps_service, api_service), daemon=True)
 
         # Khởi động các thread
         # t1.start()
-        # t2.start()
-        t3.start()
+        t2.start()
+        # t3.start()
 
         # Chờ các thread hoàn thành (sẽ không bao giờ kết thúc trừ khi có Ctrl+C)
         while running:

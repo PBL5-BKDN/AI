@@ -149,22 +149,14 @@ def speak_guidance(guidance):
         print(f"Failed to play audio: {e}")
 
 # Function to process camera input
-def predict_camera(video_capture, camera_lock, running=True, frame_skip=2, capture_image_fn=None):
+def predict_camera(cap, camera_lock, running=True, frame_skip=2):
     try:
-        # Use GStreamer pipeline for CSI camera, or device_id for USB webcam
-        cap = video_capture
-        if not cap.isOpened():
-            raise ValueError("Không thể mở camera.")
-
-        print(cap.isOpened())
-        print(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        print(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-        print("Camera opened successfully")
-
         last_guidance = ""
         last_speak_time = 0
         frame_count = 0
+        print(cap.isOpened())
+        print(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        print(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
         while running:
             print("Đang phán đoán làng đường...")
