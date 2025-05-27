@@ -160,27 +160,10 @@ def speak_guidance(guidance):
     except Exception as e:
         logging.error(f"Failed to play audio: {e}")
 
-# Hàm xử lý camera hoặc video
-def predict_source(source, frame_skip=2, save_images=False, output_dir="output_images", image_save_interval=100):
+# Function to process camera input
+def predict_camera(cap, camera_lock, running=True, frame_skip=2, capture_image_fn=None):
+    
     try:
-        # Khởi tạo nguồn video
-        cap = cv2.VideoCapture(source)
-        if not cap.isOpened():
-            raise ValueError(f"Không thể mở nguồn: {source}")
-
-        # Lấy thông số video
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30  # Mặc định 30 FPS nếu không xác định
-
-        logging.info(f"Source opened: {source}, {width}x{height}, {fps} FPS")
-
-        # Tạo thư mục lưu ảnh nếu cần
-        if save_images:
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
-                logging.info(f"Created output directory: {output_dir}")
-
         last_guidance = ""
         last_speak_time = 0
         frame_count = 0
@@ -209,8 +192,16 @@ def predict_source(source, frame_skip=2, save_images=False, output_dir="output_i
             # Tạo hướng dẫn
             guidance, priority = generate_guidance(pred)
             if guidance != last_guidance and (time.time() - last_speak_time > 2):
-                logging.info(f"Frame {frame_count}: {guidance}")
+                print(f"Khung hình {frame_count}: {guidance}")
                 speak_guidance(guidance)
+                
+                # Chụp ảnh khi phát hiện lề đường hoặc cảnh báo quan trọng
+                if capture_image_fn and ("lề đường" in guidance.lower() or priority in ["không an toàn", "chướng ngại"]):
+                    timestamp = time.strftime("%Y%m%d_%H%M%S")
+                    image_filename = f"warning_{timestamp}.jpg"
+                    capture_image_fn(image_filename)
+                    print(f"Đã chụp ảnh cảnh báo: {image_filename}")
+                
                 last_guidance = guidance
                 last_speak_time = time.time()
 
