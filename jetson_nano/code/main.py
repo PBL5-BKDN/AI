@@ -237,8 +237,7 @@ def predict_source(source, frame_skip=2, save_images=False, output_dir="output_i
             cap.release()
         raise
 
-# Chạy chương trình
-if __name__ == "__main__":
+def predict_source_main():
     # Lựa chọn nguồn đầu vào
     print("Chọn nguồn đầu vào:")
     print("1. Camera (USB hoặc CSI)")
