@@ -1,0 +1,129 @@
+{
+    "labels": [
+      {
+        "name": "background",
+        "color": [0, 0, 0],
+        "id": 0
+      },
+      {
+        "name": "curb",
+        "color": [196, 196, 196],
+        "id": 1
+      },
+      {
+        "name": "fence",
+        "color": [190, 153, 153],
+        "id": 2
+      },
+      {
+        "name": "guard-rail",
+        "color": [180, 165, 180],
+        "id": 3
+      },
+      {
+        "name": "barrier",
+        "color": [90, 120, 150],
+        "id": 4
+      },
+      {
+        "name": "wall",
+        "color": [102, 102, 156],
+        "id": 5
+      },
+      {
+        "name": "bike-lane",
+        "color": [128, 64, 255],
+        "id": 6
+      },
+      {
+        "name": "crosswalk - plain",
+        "color": [140, 140, 200],
+        "id": 7
+      },
+      {
+        "name": "curb cut",
+        "color": [170, 170, 170],
+        "id": 8
+      },
+      {
+        "name": "parking",
+        "color": [250, 170, 160],
+        "id": 9
+      },
+      {
+        "name": "pedestrian-area",
+        "color": [96, 96, 96],
+        "id": 10
+      },
+      {
+        "name": "rail track",
+        "color": [230, 150, 140],
+        "id": 11
+      },
+      {
+        "name": "road",
+        "color": [128, 64, 128],
+        "id": 12
+      },
+      {
+        "name": "service-lane",
+        "color": [110, 110, 200],
+        "id": 13
+      },
+      {
+        "name": "sidewalk",
+        "color": [244, 35, 232],
+        "id": 14
+      },
+      {
+        "name": "lane marking - crosswalk",
+        "color": [200, 128, 128],
+        "id": 15
+      },
+      {
+        "name": "lane marking - general",
+        "color": [255, 255, 255],
+        "id": 16
+      },
+      {
+        "name": "terrain",
+        "color": [152, 251, 152],
+        "id": 17
+      },
+      {
+        "name": "traffic light",
+        "color": [250, 170, 30],
+        "id": 18
+      },
+      {
+        "name": "traffic sign (front)",
+        "color": [220, 220, 0],
+        "id": 19
+      },
+      {
+        "name": "bicycle",
+        "color": [119, 11, 32],
+        "id": 20
+      }, 
+        {
+            "name": "bus",
+            "color": [0, 60, 100],
+            "id": 21
+        },
+        {
+            "name": "car",
+            "color": [0, 0, 142],
+            "id": 22
+        },
+        {
+            "name": "motorcycle",
+            "color": [0, 0, 230],
+            "id": 23
+        },
+        {
+            "name": "truck",
+            "color": [0, 0, 70],
+            "id": 24
+        }
+    ]
+  }

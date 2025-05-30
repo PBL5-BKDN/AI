@@ -1,0 +1,301 @@
+dữ liệu dùng từ tập mapillary vistas( 66 lớp): giới thiệu ngắn về dataset này
+Đặc điểm đường phố Việt Nam
+Mật độ giao thông cao: Xe máy, xe đạp, người đi bộ xuất hiện dày đặc.
+Vỉa hè phức tạp: Thường bị chiếm dụng bởi xe máy, hàng rong, hoặc không liên tục.
+Vật cản phổ biến: Cột điện, cây cối, hố ga không đậy nắp, xe đỗ sai quy định.
+Biển báo giao thông: Ít được tuân thủ nghiêm ngặt, nhưng vẫn cần phát hiện để định hướng.
+Đường đi an toàn: Vỉa hè, vạch qua đường là yếu tố chính để hướng dẫn người khiếm thị.
+Dựa trên đặc điểm này, chúng ta sẽ chọn các lớp từ Mapillary Vistas sao cho phù hợp với bài toán và bối cảnh Việt Nam.
+1. Phân tích file config.json của tập dữ liệu được chọn Mapillary vistas
+Số lượng lớp: Có 66 lớp được liệt kê, bao gồm các nhóm như animal, construction, human, object, nature, void, v.v.
+Thông tin mỗi lớp:
+name: Tên đầy đủ của lớp (ví dụ: object--vehicle--motorcycle).
+readable: Tên dễ đọc (ví dụ: Motorcycle).
+color: Giá trị RGB tương ứng với lớp trong ảnh mặt nạ (mask).
+instances: true nếu lớp được coi là đối tượng riêng lẻ (có thể dùng bounding box), false nếu là vùng không gian (thường là nền hoặc bề mặt).
+evaluate: true nếu lớp được sử dụng để đánh giá, false nếu không (như void--unlabeled).
+
+sau đó thực hiện xử lý dữ liệu:
+1. chọn lớp:  đối chiếu với file config.json cung cấp sẵn từ dữ liệu
+Mapping class_id ↔ class_name ↔ class_color:
+  🔹 1: Person                         | color: (220, 20, 60)
+  🔹 10: Bicycle                       | color: (119, 11, 32)
+  🔹 12: Car                           | color: (0, 0, 142)
+  🔹 13: Motorcycle                    | color: (0, 0, 230)
+  🔹 4: Vegetation                     | color: (107, 142, 35)
+  🔹 3: Billboard                      | color: (220, 220, 220)
+  🔹 6: Manhole                        | color: (100, 128, 160)
+  🔹 9: Trash Can                      | color: (140, 140, 20)
+  🔹 11: Barrier                       | color: (90, 120, 150)
+
+
+2. Chuyển đổi nhãn dạng mask RGB về nhãn theo format yolo
+format yolo label: ?
+code chuyển đổi:
+import json
+import os
+import cv2
+import numpy as np
+from scipy.ndimage import label
+from pathlib import Path
+from uuid import uuid4
+from scipy.spatial.distance import cdist
+
+# Đọc file config
+def load_config(config_path):
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+    return config['labels']
+
+# Lọc các lớp được chọn
+def filter_classes(labels, selected_classes):
+    return [lbl for lbl in labels if lbl['readable'] in selected_classes]
+
+# Tạo mapping từ màu sắc sang class_id
+def create_color_to_class_mapping(labels, selected_classes):
+    color_to_class = {}
+    class_id = 0
+    for lbl in labels:
+        if lbl['readable'] in selected_classes:
+            color = tuple(lbl['color'])
+            color_to_class[color] = class_id
+            class_id += 1
+    return color_to_class
+
+# Gộp các vùng gần nhau và tạo bounding box
+def get_bounding_boxes(binary_mask, min_area=50, max_distance=50):
+    # Phân vùng liên kết
+    labeled_array, num_features = label(binary_mask)
+    if num_features == 0:
+        return []
+    
+    # Lưu trữ thông tin vùng
+    regions = []
+    for i in range(1, num_features + 1):
+        region = (labeled_array == i)
+        if np.sum(region) < min_area:  # Bỏ qua vùng quá nhỏ
+            continue
+        y, x = np.where(region)
+        x_min, x_max = x.min(), x.max()
+        y_min, y_max = y.min(), y.max()
+        regions.append((x_min, y_min, x_max, y_max))
+    
+    if not regions:
+        return []
+    
+    # Gộp các vùng gần nhau
+    merged_regions = []
+    while regions:
+        current = regions.pop(0)
+        merged = [current]
+        
+        # Tính khoảng cách từ vùng hiện tại đến các vùng khác
+        i = 0
+        while i < len(regions):
+            other = regions[i]
+            # Tính khoảng cách giữa hai bounding box
+            box1 = np.array([[current[0], current[1]], [current[2], current[3]]])
+            box2 = np.array([[other[0], other[1]], [other[2], other[3]]])
+            distances = cdist(box1, box2, metric='euclidean')
+            min_distance = distances.min()
+            
+            if min_distance < max_distance:
+                # Gộp vùng
+                merged.append(regions.pop(i))
+            else:
+                i += 1
+        
+        # Tạo bounding box cho vùng gộp
+        x_min = min(r[0] for r in merged)
+        y_min = min(r[1] for r in merged)
+        x_max = max(r[2] for r in merged)
+        y_max = max(r[3] for r in merged)
+        merged_regions.append((x_min, y_min, x_max, y_max))
+    
+    return merged_regions
+
+# Chuyển đổi mask sang định dạng YOLO
+def mask_to_yolo(mask_path, output_path, color_to_class, img_width, img_height):
+    # Đọc mask
+    mask = cv2.imread(mask_path)
+    if mask is None:
+        print(f"Không thể đọc mask: {mask_path}")
+        return
+    
+    mask_rgb = cv2.cvtColor(mask, cv2.COLOR_BGR2RGB)
+    height, width = mask_rgb.shape[:2]
+    
+    # Tạo file YOLO
+    yolo_lines = []
+    
+    # Duyệt qua từng lớp (màu sắc)
+    for color, class_id in color_to_class.items():
+        # Tạo mask nhị phân cho màu hiện tại
+        binary_mask = np.all(mask_rgb == color, axis=2).astype(np.uint8)
+        
+        # Tạo bounding box cho các đối tượng
+        bboxes = get_bounding_boxes(binary_mask)
+        
+        for x_min, y_min, x_max, y_max in bboxes:
+            # Tính toán tọa độ YOLO
+            x_center = (x_min + x_max) / 2 / width
+            y_center = (y_min + y_max) / 2 / height
+            box_width = (x_max - x_min) / width
+            box_height = (y_max - y_min) / height
+            
+            # Đảm bảo bounding box hợp lệ
+            if box_width > 0 and box_height > 0:
+                yolo_lines.append(f"{class_id} {x_center:.6f} {y_center:.6f} {box_width:.6f} {box_height:.6f}")
+    
+    # Ghi file YOLO
+    output_file = output_path / f"{Path(mask_path).stem}.txt"
+    with open(output_file, 'w') as f:
+        f.write('\n'.join(yolo_lines))
+
+# Hàm chính để xử lý toàn bộ thư mục
+def convert_mapillary_to_yolo(config_path, mask_dir, output_dir, selected_classes):
+    # Tạo thư mục đầu ra nếu chưa tồn tại
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Đọc config và lọc lớp
+    labels = load_config(config_path)
+    filtered_labels = filter_classes(labels, selected_classes)
+    color_to_class = create_color_to_class_mapping(filtered_labels, selected_classes)
+    
+    # Duyệt qua tất cả file mask
+    mask_dir = Path(mask_dir)
+    for mask_path in mask_dir.glob("*.png"):  # Giả sử mask là file PNG
+        print(f"Đang xử lý: {mask_path}")
+        # Đọc kích thước ảnh từ mask
+        mask = cv2.imread(str(mask_path))
+        if mask is None:
+            continue
+        img_height, img_width = mask.shape[:2]
+        mask_to_yolo(mask_path, output_dir, color_to_class, img_width, img_height)
+    
+    # Ghi file classes.txt
+    with open(output_dir / 'classes.txt', 'w') as f:
+        f.write('\n'.join(selected_classes))
+
+# Danh sách 15 lớp được chọn
+SELECTED_CLASSES = [
+    "Ground Animal", "Person", "Bench", "Billboard", "Fire Hydrant",
+    "Mailbox", "Manhole", "Pothole", "Traffic Sign (Front)", "Trash Can", 
+    "Bicycle", "Bus", "Car", "Motorcycle", "Other Vehicle", 
+]
+
+# Chạy script
+if __name__ == "__main__":
+    CONFIG_PATH = "config.json"  # Thay bằng đường dẫn tới file config
+    MASK_DIR = "masks"  # Thay bằng đường dẫn tới thư mục chứa mask
+    OUTPUT_DIR = "output"  # Thay bằng đường dẫn tới thư mục đầu ra
+    
+    convert_mapillary_to_yolo(CONFIG_PATH, MASK_DIR, OUTPUT_DIR, SELECTED_CLASSES)
+
+giải thích logic quan trọng
+
+3. Trực quan hóa dữ liệu đã tạo nhãn 
+tự chèn ảnh
+
+4. Thống kê
+    có 20000 ảnh và labels đã được chuyển đổi
+    Thống kê số sample mỗi lớp:
+  🔹 Lớp 0: 347 instance(s)             : 0.0961%
+  🔹 Lớp 1: 74868 instance(s)           : 20.735%
+  🔹 Lớp 2: 3337 instance(s)            : 0.924%
+  🔹 Lớp 3: 66598 instance(s)           : 18.447%
+  🔹 Lớp 4: 2000 instance(s)            : 0.554%
+  🔹 Lớp 5: 746 instance(s)             : 0.207%
+  🔹 Lớp 6: 10175 instance(s)           : 2.818%
+  🔹 Lớp 7: 596 instance(s)             : 0.165%
+  🔹 Lớp 8: 96428 instance(s)           : 26.703%
+  🔹 Lớp 9: 7745 instance(s)            : 2.145%
+  🔹 Lớp 10: 5960 instance(s)           : 1.650%
+  🔹 Lớp 11: 75326 instance(s)          : 20.861%
+  🔹 Lớp 12: 10370 instance(s)          : 2.873%
+  🔹 Lớp 13: 1612 instance(s)           : 0.446%
+  🔹 Lớp 14: 4749 instance(s)           : 1.315%
+
+5. Chọn ra các ảnh có chứa lớp hiếm để giảm mất cân bằng dữ liệu, và giảm tải dữ liệu huấn luyện
+các lớp mục tiêu gồm: 
+  🔹 0: Ground Animal                  | sample: 347
+  🔹 4: Fire Hydrant                   | sample: 2000
+  🔹 5: Mailbox                        | sample: 746
+  🔹 7: Pothole                        | sample: 596 
+  🔹 13: Motorcycle                    | sample: 1612
+
+code chọn file:
+
+import os
+import shutil
+
+label_dir = "out_labels"
+image_dir = "out_images"
+
+selected_label_dir = "labels"
+selected_image_dir = "images"
+
+target_classes = {0, 4, 5, 7, 13}
+
+os.makedirs(selected_label_dir, exist_ok=True)
+os.makedirs(selected_image_dir, exist_ok=True)
+
+error_files = []
+selected_count = 0
+
+for label_file in os.listdir(label_dir):
+    if not label_file.endswith(".txt"):
+        continue
+
+    label_path = os.path.join(label_dir, label_file)
+    found = False
+
+    try:
+        with open(label_path, "r") as f:
+            lines = f.readlines()
+            for line in lines:
+                parts = line.strip().split()
+                if not parts:
+                    continue
+                try:
+                    class_id = int(parts[0])
+                    if class_id in target_classes:
+                        found = True
+                        break
+                except ValueError:
+                    continue
+    except Exception as e:
+        error_files.append((label_file, str(e)))
+        continue
+
+    if found:
+        # Copy label
+        shutil.copy(label_path, os.path.join(selected_label_dir, label_file))
+
+        # Copy image nếu tồn tại
+        base_name = os.path.splitext(label_file)[0]
+        for ext in ['.jpg', '.png', '.jpeg']:
+            image_path = os.path.join(image_dir, base_name + ext)
+            if os.path.exists(image_path):
+                shutil.copy(image_path, os.path.join(selected_image_dir, base_name + ext))
+                break
+        selected_count += 1
+
+# Kết quả
+print(f"\n✅ Đã chọn {selected_count} file hợp lệ.")
+
+if error_files:
+    print(f"\n⚠️ Có {len(error_files)} file bị lỗi format:")
+    for filename, err in error_files:
+        print(f"  - {filename}: {err}")
+
+
+
+
+Code vẽ biểu đồ thống kê tại đây: 
+
+6. Chia dữ liệu train - val
+chia dữ liệu 80% cho tập train( 10494 ảnh), 20% val(2000 ảnh), dữ liệu có cấu trúc như sau (chèn ảnh cấu trúc thư mục)
+file data yaml( chèn ảnh file data yaml)
+

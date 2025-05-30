@@ -1,0 +1,21 @@
+Thống kê lần 1: 20000 file
+Class 0 (person): 18564 bounding boxes
+Class 1 (bicycle): 3637 bounding boxes
+Class 2 (car): 48277 bounding boxes
+Class 3 (motorcycle): 3299 bounding boxes
+Class 4 (vegetation): 86596 bounding boxes
+Class 5 (billboard): 36649 bounding boxes
+Class 6 (manhole): 6660 bounding boxes
+Class 7 (trash Can): 4507 bounding boxes
+Class 8 (barrier): 6492 bounding boxes
+
+Thống kê lần 2: 11772
+Class 0 (person): 13863 bounding boxes
+Class 1 (bicycle): 3637 bounding boxes
+Class 2 (car): 29491 bounding boxes
+Class 3 (motorcycle): 3299 bounding boxes
+Class 4 (vegetation): 25959 bounding boxes
+Class 5 (billboard): 24246 bounding boxes
+Class 6 (manhole): 6660 bounding boxes
+Class 7 (trash Can): 4507 bounding boxes
+Class 8 (barrier): 6492 bounding boxes
