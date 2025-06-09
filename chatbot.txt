@@ -1,0 +1,86 @@
+553 packages can be upgraded. Run 'apt list --upgradable' to see them.
+jetson@nano:~/AI$ sudo apt install ./anydesk_7.0.0-1_arm64.deb 
+Reading package lists... Done
+Building dependency tree       
+Reading state information... Done
+Note, selecting 'anydesk' instead of './anydesk_7.0.0-1_arm64.deb'
+The following NEW packages will be installed:
+  anydesk
+0 upgraded, 1 newly installed, 0 to remove and 553 not upgraded.
+1 not fully installed or removed.
+Need to get 0 B/14,3 MB of archives.
+After this operation, 40,5 MB of additional disk space will be used.
+Get:1 /home/jetson/AI/anydesk_7.0.0-1_arm64.deb anydesk arm64 7.0.0 [14,3 MB]
+Selecting previously unselected package anydesk.
+(Reading database ... 228152 files and directories currently installed.)
+Preparing to unpack .../AI/anydesk_7.0.0-1_arm64.deb ...
+Failed to stop anydesk.service: Unit anydesk.service not loaded.
+Unpacking anydesk (7.0.0) ...
+Setting up anydesk (7.0.0) ...
+Created symlink /etc/systemd/system/multi-user.target.wants/anydesk.service → /e
+tc/systemd/system/anydesk.service.
+Setting up v4l2loopback-dkms (0.12.3-1ubuntu0.4) ...
+Removing old v4l2loopback-0.12.3 DKMS files...
+
+-------- Uninstall Beginning --------
+Module:  v4l2loopback
+Version: 0.12.3
+Kernel:  4.9.253-tegra (aarch64)
+-------------------------------------
+
+Status: Before uninstall, this module version was ACTIVE on this kernel.
+
+v4l2loopback.ko:
+ - Uninstallation
+   - Deleting from: /lib/modules/4.9.253-tegra/updates/dkms/
+ - Original module
+   - No original module was found for this module on this kernel.
+   - Use the dkms install command to reinstall any previous module version.
+
+depmod...
+
+DKMS: uninstall completed.
+
+------------------------------
+Deleting module version: 0.12.3
+completely from the DKMS tree.
+------------------------------
+Done.
+Loading new v4l2loopback-0.12.3 DKMS files...
+It is likely that 4.9.253-tegra belongs to a chroot's host
+Building for 4.9.253-tegra and 5.4.0-216-generic
+Building initial module for 4.9.253-tegra
+Done.
+
+v4l2loopback.ko:
+Running module version sanity check.
+ - Original module
+ - Installation
+   - Installing to /lib/modules/4.9.253-tegra/updates/dkms/
+
+depmod...
+
+DKMS: install completed.
+Building initial module for 5.4.0-216-generic
+ERROR: Cannot create report: [Errno 17] File exists: '/var/crash/v4l2loopback-dk
+ms.0.crash'
+Error! Bad return status for module build on kernel: 5.4.0-216-generic (aarch64)
+Consult /var/lib/dkms/v4l2loopback/0.12.3/build/make.log for more information.
+dpkg: error processing package v4l2loopback-dkms (--configure):
+ installed v4l2loopback-dkms package post-installation script subprocess returne
+d error exit status 10
+Processing triggers for desktop-file-utils (0.24-1ubuntu3) ...
+Processing triggers for mime-support (3.64ubuntu1) ...
+Processing triggers for hicolor-icon-theme (0.17-2) ...
+Processing triggers for gnome-menus (3.36.0-1ubuntu1) ...
+Processing triggers for bamfdaemon (0.5.3+18.04.20180207.2-0ubuntu2) ...
+Rebuilding /usr/share/applications/bamf-2.index...
+Processing triggers for menu (2.1.47ubuntu4) ...
+Errors were encountered while processing:
+ v4l2loopback-dkms
+E: Sub-process /usr/bin/dpkg returned an error code (1)
+jetson@nano:~/AI$ anydesk &
+[1] 34096
+jetson@nano:~/AI$ anydesk: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.34' not found (required by anydesk)
+anydesk: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.33' not found (required by anydesk)
+

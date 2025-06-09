@@ -33,10 +33,9 @@ class GPSService:
         """GPS update loop running in background thread"""
         try:
             self.serial_port = serial.Serial(GPS_PORT, BAUD_RATE, timeout=1)
-            print(f"✅ Đã kết nối với GPS trên cổng {GPS_PORT}")
+            print(f"Đã kết nối với GPS trên cổng {GPS_PORT}")
         except Exception as e:
-            print(f"❌ Không thể kết nối với GPS: {str(e)}")
-            print("⚠️ Không thể đọc dữ liệu vị trí GPS")
+            print(f"Không thể kết nối với GPS: {str(e)}")
             return
             
         # Main GPS reading loop
@@ -50,12 +49,12 @@ class GPSService:
                         if msg.status == 'A':  # A = Active (valid position)
                             self.current_lat = msg.latitude
                             self.current_lng = msg.longitude
-                            print(f"📍 Vị trí GPS cập nhật: {self.current_lat}, {self.current_lng}")
+                            # print(f"📍 Vị trí GPS cập nhật: {self.current_lat}, {self.current_lng}")
                     except Exception as e:
-                        print(f"❌ Lỗi xử lý dữ liệu GPS: {str(e)}")
+                        print(f"Lỗi xử lý dữ liệu GPS: {str(e)}")
                         
             except Exception as e:
-                print(f"❌ Lỗi đọc dữ liệu GPS: {str(e)}")
+                print(f"Lỗi đọc dữ liệu GPS: {str(e)}")
                 time.sleep(1)
     
     def get_location(self):
@@ -77,19 +76,19 @@ class GPSService:
         Returns:
             tuple: (latitude, longitude) or (None, None) if timed out
         """
-        print("⏳ Đang đợi dữ liệu GPS hợp lệ...")
+        print("Đang đợi dữ liệu GPS hợp lệ...")
         start_time = time.time()
         
         while True:
             lat, lng = self.get_location()
             
             if lat is not None and lng is not None:
-                print(f"✅ Đã nhận được vị trí: {lat}, {lng}")
+                print(f"Đã nhận được vị trí: {lat}, {lng}")
                 return lat, lng
                 
             elapsed = time.time() - start_time
             if elapsed > timeout:
-                print("⚠️ Hết thời gian đợi GPS. Yêu cầu thử lại.")
+                print("Hết thời gian đợi GPS. Yêu cầu thử lại.")
                 return None, None
                 
             time.sleep(1)
