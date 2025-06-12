@@ -14,7 +14,7 @@ def find_device_index_by_name(keyword, kind='output'):
     return None
 
 class VoiceSpeaker:
-    def __init__(self, speaker_name="pulse"):
+    def __init__(self, speaker_name):
         self.speaker_index = find_device_index_by_name(speaker_name, kind='output')
         if self.speaker_index is None:
             raise ValueError(f"Không tìm thấy loa nào chứa '{speaker_name}'!")
@@ -28,8 +28,8 @@ class VoiceSpeaker:
             try:
                 communicate = edge_tts.Communicate(
                     text=text,
-                    voice="vi-VN-HoaiMyNeural",
-                    rate="+30%"
+                    voice="vi-VN-NamMinhNeural",
+                    rate="+20%"
                 )
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
                     await communicate.save(f.name)
@@ -38,4 +38,3 @@ class VoiceSpeaker:
                 print(f"⚠️ Lỗi TTS hoặc phát âm: {e}")
         asyncio.run(run_tts())
 
-speaker_service = VoiceSpeaker(speaker_name="pulse")

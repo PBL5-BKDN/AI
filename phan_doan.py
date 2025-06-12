@@ -8,7 +8,7 @@ import numpy as np
 from navigation.speech.voice_mic import VoiceMic
 from navigation.speech.voice_speaker import VoiceSpeaker
 
-speaker_service = VoiceSpeaker()
+speaker_service = VoiceSpeaker(speaker_name="USB Audio Device")
 context = zmq.Context()
 socket = context.socket(zmq.SUB)
 socket.connect("tcp://localhost:5555")

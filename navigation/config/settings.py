@@ -7,7 +7,7 @@ GPS_PORT = "/dev/ttyTHS1"
 BAUD_RATE = 9600
 
 # API Settings
-API_URL = "https://pbl5-smart-glasses-server.onrender.com/api/v1/navigation/by-text"
+API_URL = "http://14.185.228.50:8000/api/v1/navigation/by-text"
 
 # Navigation Settings
 COMPLETION_THRESHOLD_KM = 0.020

@@ -9,8 +9,8 @@ import requests
 import adafruit_vl53l1x
 import time
 from navigation.speech.voice_speaker import VoiceSpeaker
-BASE_URL = "http://14.245.164.135:3000"
-speaker_service = VoiceSpeaker()
+BASE_URL = "http://14.185.228.50:3000"
+speaker_service = VoiceSpeaker(speaker_name="USB Audio Device")
 # --- Biến toàn cục để lưu frame mới nhất nhận từ camera server ---
 latest_frame = [None]  # dùng list để có thể gán trong thread
 
