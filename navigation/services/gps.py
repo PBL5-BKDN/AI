@@ -66,12 +66,13 @@ class GPSService:
         """
         return self.current_lat, self.current_lng
     
-    def wait_for_valid_location(self, timeout=300):
+    def wait_for_valid_location(self, timeout=300, navigation_stop_event=None):
         """
         Wait for valid GPS location data
         
         Args:
             timeout: Maximum time to wait in seconds (default: 5 minutes)
+            navigation_stop_event: Event to check for stop signal
             
         Returns:
             tuple: (latitude, longitude) or (None, None) if timed out
@@ -80,6 +81,11 @@ class GPSService:
         start_time = time.time()
         
         while True:
+            # Kiểm tra nếu có yêu cầu dừng navigation
+            if navigation_stop_event and navigation_stop_event.is_set():
+                print("Đã nhận lệnh dừng, ngưng đợi GPS.")
+                return None, None
+                
             lat, lng = self.get_location()
             
             if lat is not None and lng is not None:

@@ -78,14 +78,17 @@ def handle_ask_chatbot_thread(question):
     thread.start()
 
 def navigation_worker(destination):
-    local_navigator = Navigator(gps_service, speaker_service, mic_service, api_service)
+    local_navigator = Navigator(gps_service, speaker_service, mic_service, api_service, navigation_stop_event)
     handle_navigation(local_navigator, gps_service, destination)
 
 def handle_navigation(navigator, gps_service, destination):
     MAX_REROUTE_ATTEMPTS = 3
-    initial_lat, initial_lng = gps_service.wait_for_valid_location()
+    initial_lat, initial_lng = gps_service.wait_for_valid_location(navigation_stop_event=navigation_stop_event)
     if initial_lat is None or initial_lng is None:
-        speaker_service.speak("Không thể xác định vị trí của bạn. Mời nói lại điểm đến.")
+        if navigation_stop_event.is_set():
+            speaker_service.speak("Đã hủy tìm đường.")
+        else:
+            speaker_service.speak("Không thể xác định vị trí của bạn. Mời nói lại điểm đến.")
         return
     reroute_attempts = 0
     while reroute_attempts < MAX_REROUTE_ATTEMPTS:

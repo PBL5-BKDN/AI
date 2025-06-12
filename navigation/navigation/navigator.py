@@ -11,11 +11,12 @@ from navigation.config.settings import (
 import time
 
 class Navigator:
-    def __init__(self, gps_service, speaker_service, mic_service, api_service):
+    def __init__(self, gps_service, speaker_service, mic_service, api_service, navigation_stop_event=None):
         self.gps_service = gps_service
         self.speaker_service = speaker_service
         self.mic_service = mic_service
         self.api_service = api_service
+        self.navigation_stop_event = navigation_stop_event
 
     def get_destination_from_user(self):
         """Ask user for destination using voice"""
@@ -53,6 +54,12 @@ class Navigator:
         #     first_instruction = steps[0].get('instruction', 'Tiếp tục đi thẳng.')
         #     self.speaker_service.speak(first_instruction)
         while step_index < total_steps:
+            # Kiểm tra nếu có yêu cầu dừng navigation
+            if self.navigation_stop_event and self.navigation_stop_event.is_set():
+                print("Đã nhận lệnh dừng navigation.")
+                self.speaker_service.speak("Đã dừng dẫn đường.")
+                return True, None, None
+                
             lat, lng = self.gps_service.get_location()
             
             if lat and lng:
